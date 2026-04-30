@@ -291,7 +291,10 @@ WantedBy=multi-user.target
       return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
     }
     if (type === "service_stop") {
-      const r = await runExec(`sudo systemctl stop ${unit} && sudo systemctl status ${unit} --no-pager --lines=10`);
+      // systemctl status returns 3 for inactive units; after stop that is normal, not an error.
+      const r = await runExec(
+        `sudo systemctl stop ${unit}; ret=$?; sudo systemctl status ${unit} --no-pager --lines=10 || true; exit $ret`
+      );
       return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
     }
     if (type === "service_remove") {
@@ -303,7 +306,9 @@ WantedBy=multi-user.target
       return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
     }
     if (type === "agent_disconnect") {
-      const r = await runExec(`sudo systemctl stop ${unit} && sudo systemctl status ${unit} --no-pager --lines=5`);
+      const r = await runExec(
+        `sudo systemctl stop ${unit}; ret=$?; sudo systemctl status ${unit} --no-pager --lines=5 || true; exit $ret`
+      );
       return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
     }
   }
