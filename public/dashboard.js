@@ -7,6 +7,7 @@
   const shellSessions = {};
   const isWindowsBrowser = /Windows/i.test(navigator.userAgent || "");
   let connectivityTimer = null;
+  let cachedLanUrl = "";
 
   $("admin-token").value = token;
   if (isWindowsBrowser && $("install-shell")) {
@@ -98,16 +99,29 @@
     return `http://${ip}:${port}`;
   }
 
+  function isLocalhostUrl(urlText) {
+    try {
+      const u = new URL(urlText);
+      return u.hostname === "localhost" || u.hostname === "127.0.0.1";
+    } catch {
+      return false;
+    }
+  }
+
   async function initAgentServerUrl() {
     const savedAgentUrl = sessionStorage.getItem("aj_agent_server_url");
-    if (savedAgentUrl) {
-      $("agent-server-url").value = savedAgentUrl;
-      refreshInstallSnippet();
-      return;
-    }
-
     const b = baseUrl();
     try {
+      const info = await api("/api/server-info");
+      const lanUrl = pickLanUrlFromServerInfo(info);
+      if (lanUrl) cachedLanUrl = lanUrl;
+
+      if (savedAgentUrl && !isLocalhostUrl(savedAgentUrl)) {
+        $("agent-server-url").value = savedAgentUrl;
+        refreshInstallSnippet();
+        return;
+      }
+
       const parsed = new URL(b);
       const isLocal =
         parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
@@ -116,12 +130,14 @@
         refreshInstallSnippet();
         return;
       }
-      const info = await api("/api/server-info");
-      const lanUrl = pickLanUrlFromServerInfo(info);
       $("agent-server-url").value = lanUrl || b;
       if (lanUrl) sessionStorage.setItem("aj_agent_server_url", lanUrl);
     } catch {
-      $("agent-server-url").value = b;
+      if (savedAgentUrl) {
+        $("agent-server-url").value = savedAgentUrl;
+      } else {
+        $("agent-server-url").value = b;
+      }
     }
     refreshInstallSnippet();
   }
@@ -139,6 +155,12 @@
     }
   }
 
+  function bestAgentServerUrl() {
+    const selected = normalizedAgentServerUrl();
+    if (isLocalhostUrl(selected) && cachedLanUrl) return cachedLanUrl;
+    return selected;
+  }
+
   function updateLocalhostWarning() {
     const el = $("localhost-warning");
     if (!el) return;
@@ -147,7 +169,9 @@
       const bad = u.hostname === "localhost" || u.hostname === "127.0.0.1";
       if (bad) {
         el.textContent =
-          "Other PCs cannot reach this dashboard at localhost. Enter this machine's LAN IP (example http://192.168.1.10:3847) in \"Agent connects to\" above, then copy the command again.";
+          cachedLanUrl
+            ? `Other PCs cannot reach localhost. Using detected LAN URL in copied commands: ${cachedLanUrl}`
+            : "Other PCs cannot reach this dashboard at localhost. Enter this machine's LAN IP (example http://192.168.1.10:3847) in \"Agent connects to\" above, then copy the command again.";
         el.classList.remove("hidden");
       } else {
         el.classList.add("hidden");
@@ -172,7 +196,7 @@
   async function updateConnectivityStatus() {
     const el = $("connectivity-live-status");
     if (!el) return;
-    const server = normalizedAgentServerUrl();
+    const server = bestAgentServerUrl();
     try {
       const r = await fetch(`${server}/api/health`, { method: "GET" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -196,7 +220,7 @@
   }
 
   function buildConnectivitySnippet() {
-    const server = normalizedAgentServerUrl();
+    const server = bestAgentServerUrl();
     return [
       `# Linux/macOS connectivity test (run on agent PC)`,
       `curl -v "${server}/api/health"`,
@@ -207,7 +231,7 @@
   }
 
   function buildInstallSnippet(key = "YOUR_PAIRING_KEY") {
-    const server = normalizedAgentServerUrl();
+    const server = bestAgentServerUrl();
     const mode = $("install-mode")?.value || "node";
     const shell = $("install-shell")?.value || "bash";
     const repo = "https://github.com/ajay123-aj/aj-server-manager.git";
@@ -223,7 +247,7 @@
 
     if (shell === "cmd") {
       const winClone =
-        `cd /d %USERPROFILE% && (git -C aj-server-manager pull || git clone "${repo}" aj-server-manager) && cd aj-server-manager &&`;
+        `cd /d %USERPROFILE% && (if exist aj-server-manager\\.git (git -C aj-server-manager pull) else (git clone "${repo}" aj-server-manager)) && cd aj-server-manager &&`;
       if (mode === "docker") {
         return `${winClone} docker run --rm -it -v "%cd%:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
       }
