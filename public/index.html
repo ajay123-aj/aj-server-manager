@@ -78,6 +78,14 @@
                 <option value="node">Node (auto npm install)</option>
                 <option value="docker">Docker</option>
               </select>
+              <label class="check">
+                <input type="checkbox" id="install-as-service" />
+                Install as background service
+              </label>
+              <label class="check">
+                <input type="checkbox" id="auto-close-terminal" checked />
+                Auto close terminal after setup
+              </label>
               <button type="button" id="btn-gen-copy-install">Generate + Copy</button>
               <button type="button" id="btn-copy-install" class="btn-ghost">Copy command</button>
             </div>
@@ -86,6 +94,7 @@
               This line refreshes when you change shell, Docker vs Node, or “Agent connects to”.
               Replace <code>YOUR_PAIRING_KEY</code> after you click Generate key.
               On Windows, select <code>Windows PowerShell</code> for <code>PS&gt;</code>.
+              If "Install as background service" is enabled, use Services tab buttons to Connect/Disconnect.
             </p>
             <pre class="snippet" id="install-snippet"></pre>
             <h4 class="snippet-title">Connectivity check commands</h4>

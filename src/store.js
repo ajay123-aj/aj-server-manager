@@ -119,6 +119,15 @@ function listKeys() {
   return readStore().pairingKeys;
 }
 
+function removeAgent(agentId) {
+  const store = readStore();
+  const before = store.agents.length;
+  store.agents = store.agents.filter((a) => a.id !== agentId);
+  if (store.agents.length === before) return false;
+  writeStore(store);
+  return true;
+}
+
 module.exports = {
   readStore,
   createPairingKey,
@@ -128,4 +137,5 @@ module.exports = {
   touchAgent,
   listAgents,
   listKeys,
+  removeAgent,
 };

@@ -238,30 +238,63 @@
     const server = bestAgentServerUrl();
     const mode = $("install-mode")?.value || "node";
     const shell = $("install-shell")?.value || "bash";
+    const asService = !!$("install-as-service")?.checked;
+    const autoClose = !!$("auto-close-terminal")?.checked;
     const repo = "https://github.com/ajay123-aj/aj-server-manager.git";
 
     if (shell === "powershell") {
       const psClone =
         `Set-Location $env:USERPROFILE; if (Test-Path .\\aj-server-manager\\.git) { git -C .\\aj-server-manager pull } else { git clone "${repo}" aj-server-manager }; Set-Location .\\aj-server-manager;`;
       if (mode === "docker") {
-        return `${psClone} docker run --rm -it -v "${"$PWD.Path"}:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+        const cmd = `${psClone} docker run --rm -it -v "${"$PWD.Path"}:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+        return autoClose ? `${cmd}; exit` : cmd;
       }
-      return `${psClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
+      if (asService) {
+        const cmd = `${psClone} $n='AJAgentService'; $bin='"' + (Get-Command node).Path + '" "' + (Resolve-Path .\\src\\agent-cli.js) + '" --server "${server}" --key "${key}"'; if (-not (Get-Service -Name $n -ErrorAction SilentlyContinue)) { New-Service -Name $n -BinaryPathName $bin -DisplayName "AJ Agent Service" -StartupType Automatic }; Start-Service -Name $n; Get-Service -Name $n | Select Name,Status,StartType`;
+        return autoClose ? `${cmd}; exit` : cmd;
+      }
+      const cmd = `${psClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
+      return autoClose ? `${cmd}; exit` : cmd;
     }
 
     if (shell === "cmd") {
       const winClone =
         `cd /d %USERPROFILE% && (if exist aj-server-manager\\.git (git -C aj-server-manager pull) else (git clone "${repo}" aj-server-manager)) && cd aj-server-manager &&`;
       if (mode === "docker") {
-        return `${winClone} docker run --rm -it -v "%cd%:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+        const cmd = `${winClone} docker run --rm -it -v "%cd%:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+        return autoClose ? `${cmd} && exit` : cmd;
       }
-      return `${winClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
+      if (asService) {
+        const cmd = `${winClone} powershell -NoProfile -Command "$n='AJAgentService'; $bin='\"' + (Get-Command node).Path + '\" \"' + (Resolve-Path .\\src\\agent-cli.js) + '\" --server ${server} --key ${key}'; if (-not (Get-Service -Name $n -ErrorAction SilentlyContinue)) { New-Service -Name $n -BinaryPathName $bin -DisplayName 'AJ Agent Service' -StartupType Automatic }; Start-Service -Name $n; Get-Service -Name $n | Select Name,Status,StartType"`;
+        return autoClose ? `${cmd} && exit` : cmd;
+      }
+      const cmd = `${winClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
+      return autoClose ? `${cmd} && exit` : cmd;
     }
 
     const posixClone =
       `(git -C ~/aj-server-manager pull || git clone "${repo}" ~/aj-server-manager) && cd ~/aj-server-manager &&`;
     if (mode === "docker") {
       return `${posixClone} docker run --rm -it -v "$(pwd):/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+    }
+    if (asService) {
+      return `${posixClone} (command -v node >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y nodejs npm)); sudo bash -lc 'cat >/etc/systemd/system/aj-agent.service <<EOF
+[Unit]
+Description=AJ Agent Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$(command -v node) $(pwd)/src/agent-cli.js --server "${server}" --key "${key}"
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl status aj-agent.service --no-pager --lines=5'`;
     }
     return `${posixClone} (command -v node >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y nodejs npm)); node ./src/agent-cli.js --server "${server}" --key "${key}"`;
   }
@@ -275,10 +308,35 @@
         <td>${escapeHtml(a.hostname)}</td>
         <td>${escapeHtml(a.platform)} ${escapeHtml(a.arch || "")}</td>
         <td>${a.online ? '<span class="pill ok">Online</span>' : '<span class="pill off">Offline</span>'}</td>
-        <td><button type="button" class="btn-ghost btn-open">Open</button></td>`;
+        <td>
+          <button type="button" class="btn-ghost btn-open">Open</button>
+          <button type="button" class="btn-ghost btn-remove">Remove</button>
+        </td>`;
       tr.querySelector(".btn-open").onclick = () => openDetail(a);
+      tr.querySelector(".btn-remove").onclick = () => removeComputer(a);
       tb.appendChild(tr);
     });
+  }
+
+  async function removeComputer(agent) {
+    const ok = confirm(
+      `Remove computer "${agent.hostname}" from dashboard?\nThis removes it from list and disconnects it.`
+    );
+    if (!ok) return;
+    try {
+      await api(`/api/agents/${encodeURIComponent(agent.id)}`, {
+        method: "DELETE",
+      });
+      if (selectedAgentId === agent.id) {
+        $("detail-panel").classList.toggle("hidden", true);
+        stopMonitorTimer();
+        selectedAgentId = null;
+      }
+      await refreshAgents();
+      $("key-output").textContent = `Removed computer: ${agent.hostname}`;
+    } catch (e) {
+      $("key-output").textContent = `Remove failed: ${e.message || e}`;
+    }
   }
 
   function escapeHtml(s) {
@@ -423,6 +481,8 @@
 
   $("install-mode").onchange = () => refreshInstallSnippet();
   $("install-shell").onchange = () => refreshInstallSnippet();
+  $("install-as-service").onchange = () => refreshInstallSnippet();
+  $("auto-close-terminal").onchange = () => refreshInstallSnippet();
 
   $("agent-server-url").addEventListener("input", () => {
     const v = $("agent-server-url").value.trim();

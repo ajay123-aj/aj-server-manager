@@ -134,6 +134,27 @@ app.post(
   }
 );
 
+app.delete(
+  "/api/agents/:agentId",
+  warnIfNoAdminToken,
+  authAdmin,
+  (req, res) => {
+    const agentId = req.params.agentId;
+    const removed = store.removeAgent(agentId);
+    const set = agentSockets.get(agentId);
+    if (set) {
+      for (const sid of set) {
+        io.to(sid).emit("agent:error", { error: "Removed by dashboard admin" });
+        io.sockets.sockets.get(sid)?.disconnect(true);
+      }
+      agentSockets.delete(agentId);
+    }
+    broadcastAgentList();
+    if (!removed) return res.status(404).json({ error: "Agent not found" });
+    return res.json({ ok: true });
+  }
+);
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" },
