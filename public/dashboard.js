@@ -88,7 +88,7 @@
 
   function buildInstallSnippet(key = "YOUR_PAIRING_KEY") {
     const server = baseUrl();
-    return `git clone "https://github.com/YOUR_USERNAME/aj-server-manager.git"; cd aj-server-manager; npm install; node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
+    return `git clone "https://github.com/ajay123-aj/aj-server-manager.git"; cd aj-server-manager; npm install; node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
   }
 
   function renderAgents(agents) {
