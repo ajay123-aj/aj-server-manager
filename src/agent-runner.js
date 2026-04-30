@@ -573,6 +573,11 @@ async function runAgent({
     socket.agentIdStored = reconnectId;
   }
 
+  /** Expected reconnect right after pairing (switch auth token); avoids scary "disconnect" spam. */
+  let awaitingCredentialHandoffReconnect = false;
+  /** --pair-one is exiting; mute disconnect logs for that client-initiated disconnect. */
+  let pairOnceClosingSocket = false;
+
   /** One-shot pairing / verify: exit after first stable session so install scripts show success in-console. */
   let enrollWatchTimer = null;
   let enrollTerminal = false;
@@ -588,6 +593,7 @@ async function runAgent({
     clearEnrollWatch();
     appendBootLog("pair-once: success, exiting");
     console.log("[agent] Enrollment OK — this window can close. Long-running agent will use saved credentials.");
+    pairOnceClosingSocket = true;
     try {
       socket.disconnect();
     } catch (_) {}
@@ -598,6 +604,7 @@ async function runAgent({
     enrollTerminal = true;
     clearEnrollWatch();
     appendBootLog("pair-once: failed");
+    pairOnceClosingSocket = true;
     try {
       socket.disconnect();
     } catch (_) {}
@@ -611,6 +618,7 @@ async function runAgent({
       );
       appendBootLog("pair-once: timeout");
       enrollTerminal = true;
+      pairOnceClosingSocket = true;
       try {
         socket.disconnect();
       } catch (_) {}
@@ -655,6 +663,7 @@ async function runAgent({
       arch: os.arch(),
       version: process.version,
     };
+    awaitingCredentialHandoffReconnect = true;
     socket.disconnect().connect();
   });
 
@@ -697,12 +706,23 @@ async function runAgent({
   });
 
   socket.on("disconnect", (reason) => {
-    appendBootLog(`disconnect ${String(reason)}`);
-    console.log("[agent] disconnected:", reason);
     if (telemetryTimer) {
       clearInterval(telemetryTimer);
       telemetryTimer = null;
     }
+    const r = String(reason);
+    if (awaitingCredentialHandoffReconnect) {
+      awaitingCredentialHandoffReconnect = false;
+      appendBootLog(`credential-handoff (${r})`);
+      console.log("[agent] Reconnecting with saved credentials (one quick disconnect — normal after pairing).");
+      return;
+    }
+    if (pairOnceClosingSocket) {
+      appendBootLog(`pair-once exit (${r})`);
+      return;
+    }
+    appendBootLog(`disconnect ${r}`);
+    console.log("[agent] disconnected:", r);
   });
 
   socket.on("connect_error", (err) => {
