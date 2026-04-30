@@ -1,12 +1,112 @@
 const os = require("os");
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
+const https = require("https");
 const { spawn } = require("child_process");
 const { io } = require("socket.io-client");
 const si = require("systeminformation");
 
 const EXEC_TIMEOUT_MS = 120000;
 const shells = new Map();
+
+function isLocalhostHost(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function withTimeout(ms, promiseFactory) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(null), ms);
+    promiseFactory()
+      .then((v) => {
+        clearTimeout(t);
+        resolve(v);
+      })
+      .catch(() => {
+        clearTimeout(t);
+        resolve(null);
+      });
+  });
+}
+
+function httpGetJson(urlString, timeoutMs = 900) {
+  return withTimeout(timeoutMs, () => {
+    return new Promise((resolve, reject) => {
+      const u = new URL(urlString);
+      const lib = u.protocol === "https:" ? https : http;
+      const req = lib.get(
+        urlString,
+        { timeout: timeoutMs, headers: { "User-Agent": "aj-agent-discovery" } },
+        (res) => {
+          let buf = "";
+          res.on("data", (d) => (buf += d.toString()));
+          res.on("end", () => {
+            if (res.statusCode !== 200) return reject(new Error("non-200"));
+            try {
+              resolve(JSON.parse(buf));
+            } catch {
+              reject(new Error("bad-json"));
+            }
+          });
+        }
+      );
+      req.on("timeout", () => req.destroy());
+      req.on("error", reject);
+    });
+  });
+}
+
+async function discoverDashboardUrlFromLocalhost(serverUrl) {
+  let parsed;
+  try {
+    parsed = new URL(serverUrl);
+  } catch {
+    return serverUrl;
+  }
+  if (!isLocalhostHost(parsed.hostname)) return serverUrl;
+
+  const nets = os.networkInterfaces();
+  const prefixes = new Set();
+  for (const n of Object.values(nets)) {
+    for (const row of n || []) {
+      if (
+        row &&
+        row.family === "IPv4" &&
+        !row.internal &&
+        typeof row.address === "string"
+      ) {
+        const parts = row.address.split(".");
+        if (parts.length === 4) prefixes.add(`${parts[0]}.${parts[1]}.${parts[2]}`);
+      }
+    }
+  }
+  if (prefixes.size === 0) return serverUrl;
+
+  const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+  const scheme = parsed.protocol || "http:";
+  const candidates = [];
+  for (const p of prefixes) {
+    for (let i = 1; i <= 254; i += 1) {
+      candidates.push(`${scheme}//${p}.${i}:${port}`);
+    }
+  }
+
+  // Scan in bounded batches to avoid overwhelming low-power devices.
+  const batchSize = 36;
+  for (let i = 0; i < candidates.length; i += batchSize) {
+    const batch = candidates.slice(i, i + batchSize);
+    const checks = batch.map(async (base) => {
+      const r = await httpGetJson(`${base}/api/health`, 700);
+      if (r && r.ok === true && r.name === "aj-server-manager") return base;
+      return null;
+    });
+    const results = await Promise.all(checks);
+    const found = results.find(Boolean);
+    if (found) return found;
+  }
+
+  return serverUrl;
+}
 
 function configPath(custom) {
   if (custom) return path.resolve(custom);
@@ -222,7 +322,7 @@ async function handleCommand(socket, msg) {
   }
 }
 
-function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
+async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   const cfgPath = configPath(configFile);
   let pair = pairingKey;
   let reconnectId = reconnect?.agentId;
@@ -265,7 +365,11 @@ function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
       ? { ...authBase, reconnectAgentId: reconnectId, reconnectSecret }
       : { ...authBase, pairingKey: pair };
 
-  const normalized = serverUrl.replace(/\/$/, "");
+  const discovered = await discoverDashboardUrlFromLocalhost(serverUrl);
+  const normalized = discovered.replace(/\/$/, "");
+  if (discovered !== serverUrl) {
+    console.log(`[agent] auto-detected dashboard URL: ${normalized}`);
+  }
   const socket = io(normalized, {
     path: "/socket.io/",
     transports: ["polling", "websocket"],
