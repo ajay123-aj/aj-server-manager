@@ -275,3 +275,40 @@ button:hover {
 #shell-out {
   font-family: var(--mono);
 }
+
+.monitor-grid {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.metric-card {
+  background: #0f1622;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.metric-card h4 {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.metric-value {
+  margin: 0 0 0.45rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.metric-card canvas {
+  width: 100%;
+  height: 64px;
+  display: block;
+}
+
+.monitor-live {
+  margin-left: auto;
+}

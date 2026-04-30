@@ -125,7 +125,34 @@
           <button type="button" class="tab" data-tab="shell">Shell</button>
         </div>
         <div class="tab-panel" data-panel="monitor">
-          <button type="button" id="btn-refresh-metrics">Refresh metrics</button>
+          <div class="row">
+            <button type="button" id="btn-refresh-metrics">Refresh metrics</button>
+            <span class="hint hint-compact monitor-live" id="monitor-live-status"
+              >Live refresh every 4s</span
+            >
+          </div>
+          <div class="monitor-grid">
+            <div class="metric-card">
+              <h4>CPU</h4>
+              <p class="metric-value" id="metric-cpu">-</p>
+              <canvas id="chart-cpu" width="260" height="64"></canvas>
+            </div>
+            <div class="metric-card">
+              <h4>Memory</h4>
+              <p class="metric-value" id="metric-mem">-</p>
+              <canvas id="chart-mem" width="260" height="64"></canvas>
+            </div>
+            <div class="metric-card">
+              <h4>Disk</h4>
+              <p class="metric-value" id="metric-disk">-</p>
+              <canvas id="chart-disk" width="260" height="64"></canvas>
+            </div>
+            <div class="metric-card">
+              <h4>Uptime</h4>
+              <p class="metric-value" id="metric-uptime">-</p>
+              <p class="hint hint-compact" id="metric-hostname"></p>
+            </div>
+          </div>
           <pre class="mono" id="metrics-out"></pre>
         </div>
         <div class="tab-panel hidden" data-panel="services">

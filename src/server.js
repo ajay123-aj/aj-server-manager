@@ -137,6 +137,8 @@ app.post(
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" },
+  pingInterval: 5000,
+  pingTimeout: 10000,
 });
 
 io.use((socket, next) => {
@@ -273,6 +275,12 @@ io.on("connection", (socket) => {
     socket.on("agent:shell_out", (body) => {
       for (const ds of dashboardSockets) {
         io.to(ds).emit("dashboard:shell_out", { ...body, agentId });
+      }
+    });
+
+    socket.on("agent:telemetry", (body) => {
+      for (const ds of dashboardSockets) {
+        io.to(ds).emit("dashboard:telemetry", { ...body, agentId });
       }
     });
 

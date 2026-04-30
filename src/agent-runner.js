@@ -205,6 +205,28 @@ async function gatherMetrics() {
   };
 }
 
+async function gatherTelemetryLite() {
+  const [currentLoad, mem, fsSizes, uptime] = await Promise.all([
+    si.currentLoad(),
+    si.mem(),
+    si.fsSize(),
+    si.time(),
+  ]);
+  return {
+    currentLoad: { currentLoad: Number(currentLoad?.currentLoad || 0) },
+    mem: {
+      total: Number(mem?.total || 0),
+      used: Number(mem?.used || 0),
+      active: Number(mem?.active || mem?.used || 0),
+    },
+    fsSizes: Array.isArray(fsSizes) ? fsSizes.slice(0, 1) : [],
+    uptime,
+    hostname: os.hostname(),
+    lite: true,
+    ts: Date.now(),
+  };
+}
+
 function startShell(socket, sessionId) {
   if (shells.has(sessionId)) return;
   const isWin = process.platform === "win32";
@@ -372,15 +394,30 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   }
   const socket = io(normalized, {
     path: "/socket.io/",
-    transports: ["polling", "websocket"],
+    transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 3000,
     auth,
   });
 
+  let telemetryTimer = null;
+  async function startTelemetryLoop() {
+    if (telemetryTimer) clearInterval(telemetryTimer);
+    const send = async () => {
+      if (!socket.connected) return;
+      try {
+        const payload = await gatherTelemetryLite();
+        socket.emit("agent:telemetry", payload);
+      } catch (_) {}
+    };
+    await send();
+    telemetryTimer = setInterval(send, 2000);
+  }
+
   socket.on("connect", () => {
     console.log("[agent] connected");
+    startTelemetryLoop();
   });
 
   socket.on("agent:registered", (body) => {
@@ -418,6 +455,10 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
 
   socket.on("disconnect", (reason) => {
     console.log("[agent] disconnected:", reason);
+    if (telemetryTimer) {
+      clearInterval(telemetryTimer);
+      telemetryTimer = null;
+    }
   });
 
   socket.on("connect_error", (err) => {
