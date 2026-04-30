@@ -128,6 +128,24 @@ function configPath(custom) {
   return path.join(os.homedir(), ".aj-server-manager-agent.json");
 }
 
+/** Canonical origin string for forgiving comparison (trim, slashes, casing). */
+function dashboardOriginComparable(raw) {
+  const trimmed = String(raw || "").trim().replace(/\s+/g, "");
+  if (!trimmed) return null;
+  const collapsed = trimmed.replace(/\/+$/, "");
+  try {
+    return new URL(collapsed).origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function dashboardUrlsSameOrigin(serverUrlRaw, storedUrlRaw) {
+  const a = dashboardOriginComparable(serverUrlRaw);
+  const b = dashboardOriginComparable(storedUrlRaw);
+  return Boolean(a && b && a === b);
+}
+
 function loadConfig(p) {
   try {
     if (!fs.existsSync(p)) return null;
@@ -514,15 +532,25 @@ async function runAgent({
     existing?.secret &&
     !cliExplicitPairingKey
   ) {
-    try {
-      const u = new URL(serverUrl);
-      const su = new URL(existing.serverUrl);
-      if (u.origin === su.origin) {
-        reconnectId = existing.agentId;
-        reconnectSecret = existing.secret;
-        pair = "";
-      }
-    } catch (_) {}
+    if (dashboardUrlsSameOrigin(serverUrl, existing.serverUrl)) {
+      reconnectId = existing.agentId;
+      reconnectSecret = existing.secret;
+      pair = "";
+      appendBootLog(
+        `reconnect: saved creds for agentId=${String(existing.agentId).slice(
+          0,
+          8
+        )}… origin=${dashboardOriginComparable(serverUrl)}`
+      );
+    } else if (existing.agentId && existing.secret) {
+      appendBootLog(
+        `saved creds skipped: CLI url origin=${dashboardOriginComparable(
+          serverUrl
+        )} stored=${dashboardOriginComparable(
+          existing.serverUrl
+        )} (use same --server as enrollment or edit ${cfgPath})`
+      );
+    }
   }
   if (!cliExplicitPairingKey && !(reconnectId && reconnectSecret) && process.env.AJ_PAIRING_KEY) {
     pair = String(process.env.AJ_PAIRING_KEY).trim();
@@ -657,7 +685,12 @@ async function runAgent({
   socket.on("agent:registered", (body) => {
     const { agentId, secret } = body || {};
     socket.agentIdStored = agentId;
-    if (!agentId || !secret) return;
+    if (!agentId || !secret) {
+      appendBootLog("agent:registered missing agentId or secret — cannot persist; re-pair.");
+      console.error("[agent] enrollment payload incomplete; pairing key may need to be regenerated on the dashboard.");
+      if (exitAfterReady) finishEnrollFail();
+      return;
+    }
     appendBootLog(`paired ok agentId=${agentId}`);
     console.log("[agent] paired; switching to persisted credentials:", agentId);
     saveConfig(cfgPath, { serverUrl: normalized, agentId, secret });

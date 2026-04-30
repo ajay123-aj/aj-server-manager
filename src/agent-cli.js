@@ -91,4 +91,7 @@ runAgent({
   pairingKey: pairingKey || undefined,
   configFile: argv.config || undefined,
   exitAfterReady: Boolean(argv.pairOnce),
+}).catch((e) => {
+  console.error("[agent] fatal:", e && e.stack ? e.stack : e);
+  process.exit(1);
 });
