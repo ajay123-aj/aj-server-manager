@@ -50,9 +50,13 @@
             <pre class="snippet" id="key-output"></pre>
             <h3>Install on a PC</h3>
             <p class="hint">
-              Use one command only on the other PC (PowerShell). Replace server IP, key, and repo URL.
+              Choose install mode and run one command on the other PC (PowerShell).
             </p>
             <div class="row">
+              <select id="install-mode">
+                <option value="node">Node command</option>
+                <option value="docker">Docker command</option>
+              </select>
               <button type="button" id="btn-copy-install" class="btn-ghost">Copy command</button>
             </div>
             <pre class="snippet" id="install-snippet"></pre>

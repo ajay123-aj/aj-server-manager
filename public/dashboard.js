@@ -88,7 +88,11 @@
 
   function buildInstallSnippet(key = "YOUR_PAIRING_KEY") {
     const server = baseUrl();
-    return `git clone "https://github.com/ajay123-aj/aj-server-manager.git"; cd aj-server-manager; npm install; node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
+    const mode = $("install-mode")?.value || "node";
+    if (mode === "docker") {
+      return `git clone "https://github.com/ajay123-aj/aj-server-manager.git" && cd aj-server-manager && docker run --rm -it -v "%cd%:/app" -w /app node:20 sh -lc "npm install && node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+    }
+    return `git clone "https://github.com/ajay123-aj/aj-server-manager.git" && cd aj-server-manager && npm install && node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
   }
 
   function renderAgents(agents) {
@@ -181,6 +185,13 @@
     } catch (e) {
       $("key-output").textContent = "Copy failed. Select and copy manually.";
     }
+  };
+
+  $("install-mode").onchange = () => {
+    const keyLine = $("key-output").textContent || "";
+    const match = keyLine.match(/Pairing key:\s*([a-z0-9]+)/i);
+    const key = match?.[1] || "YOUR_PAIRING_KEY";
+    $("install-snippet").textContent = buildInstallSnippet(key);
   };
 
   function sendCommand(agentId, type, payload, cb) {
