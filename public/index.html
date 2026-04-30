@@ -49,13 +49,33 @@
             </div>
             <pre class="snippet" id="key-output"></pre>
             <h3>Install on a PC</h3>
-            <p class="hint">
-              Choose install mode and run one command on the other PC (PowerShell).
+            <p class="hint" id="agent-url-explain">
+              <strong>URL for agents</strong>
+              (<code>http://IP:PORT</code>): use the LAN address of
+              <em>this</em> dashboard PC — not
+              <code>localhost</code> when the agent runs on another machine.
+              Run the copied script from your home folder (<code>cd ~</code>) so it does not nest
+              <code>aj-server-manager</code>.
             </p>
             <div class="row">
-              <select id="install-mode">
-                <option value="node">Node command</option>
-                <option value="docker">Docker command</option>
+              <label class="lbl" for="agent-server-url">Agent connects to</label>
+              <input
+                type="text"
+                id="agent-server-url"
+                spellcheck="false"
+                placeholder="http://192.168.1.10:3847"
+                autocomplete="off"
+              />
+            </div>
+            <p class="hint warning hidden" id="localhost-warning"></p>
+            <div class="row">
+              <select id="install-shell" aria-label="Target shell">
+                <option value="bash">Linux / macOS / Git Bash / WSL (bash)</option>
+                <option value="cmd">Windows cmd.exe</option>
+              </select>
+              <select id="install-mode" aria-label="Install mode">
+                <option value="node">Node (auto npm install)</option>
+                <option value="docker">Docker</option>
               </select>
               <button type="button" id="btn-copy-install" class="btn-ghost">Copy command</button>
             </div>

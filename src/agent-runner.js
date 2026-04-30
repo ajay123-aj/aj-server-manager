@@ -268,7 +268,7 @@ function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   const normalized = serverUrl.replace(/\/$/, "");
   const socket = io(normalized, {
     path: "/socket.io/",
-    transports: ["websocket", "polling"],
+    transports: ["polling", "websocket"],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 3000,

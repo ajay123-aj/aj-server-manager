@@ -74,8 +74,9 @@
         console.error("[dashboard]", err.message)
       );
       showMain();
-      $("install-snippet").textContent =
-        buildInstallSnippet() || "// Set server URL manually";
+      const savedAgentUrl = sessionStorage.getItem("aj_agent_server_url");
+      $("agent-server-url").value = savedAgentUrl || baseUrl();
+      refreshInstallSnippet();
       await refreshAgents();
     } catch (e) {
       setAuthStatus(e.message || String(e), true);
@@ -86,13 +87,69 @@
     return `${window.location.origin.replace(/\/$/, "")}`;
   }
 
-  function buildInstallSnippet(key = "YOUR_PAIRING_KEY") {
-    const server = baseUrl();
-    const mode = $("install-mode")?.value || "node";
-    if (mode === "docker") {
-      return `git clone "https://github.com/ajay123-aj/aj-server-manager.git" && cd aj-server-manager && docker run --rm -it -v "%cd%:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+  function normalizedAgentServerUrl() {
+    let raw = ($("agent-server-url") && $("agent-server-url").value.trim()) || "";
+    if (!raw) raw = sessionStorage.getItem("aj_agent_server_url") || "";
+    if (!raw) raw = baseUrl();
+    if (!/^https?:\/\//i.test(raw)) raw = `http://${raw}`;
+    try {
+      const u = new URL(raw);
+      return `${u.protocol}//${u.host}`.replace(/\/$/, "");
+    } catch {
+      return baseUrl();
     }
-    return `git clone "https://github.com/ajay123-aj/aj-server-manager.git" && cd aj-server-manager && node ./src/agent-cli.js --server "${server}" --key "${key}"`;
+  }
+
+  function updateLocalhostWarning() {
+    const el = $("localhost-warning");
+    if (!el) return;
+    try {
+      const u = new URL(normalizedAgentServerUrl());
+      const bad = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+      if (bad) {
+        el.textContent =
+          "Other PCs cannot reach this dashboard at localhost. Enter this machine's LAN IP (example http://192.168.1.10:3847) in \"Agent connects to\" above, then copy the command again.";
+        el.classList.remove("hidden");
+      } else {
+        el.classList.add("hidden");
+      }
+    } catch {
+      el.classList.add("hidden");
+    }
+  }
+
+  function currentPairingKeyFallback() {
+    const keyLine = $("key-output").textContent || "";
+    const match = keyLine.match(/Pairing key:\s*([a-z0-9]+)/i);
+    return match?.[1] || "YOUR_PAIRING_KEY";
+  }
+
+  function refreshInstallSnippet() {
+    $("install-snippet").textContent = buildInstallSnippet(currentPairingKeyFallback());
+    updateLocalhostWarning();
+  }
+
+  function buildInstallSnippet(key = "YOUR_PAIRING_KEY") {
+    const server = normalizedAgentServerUrl();
+    const mode = $("install-mode")?.value || "node";
+    const shell = $("install-shell")?.value || "bash";
+    const repo = "https://github.com/ajay123-aj/aj-server-manager.git";
+
+    if (shell === "cmd") {
+      const winClone =
+        `(git -C aj-server-manager pull || git clone "${repo}" aj-server-manager) && cd aj-server-manager &&`;
+      if (mode === "docker") {
+        return `${winClone} docker run --rm -it -v "%cd%:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+      }
+      return `${winClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
+    }
+
+    const posixClone =
+      `(git -C aj-server-manager pull || git clone "${repo}" aj-server-manager) && cd aj-server-manager &&`;
+    if (mode === "docker") {
+      return `${posixClone} docker run --rm -it -v "$(pwd):/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+    }
+    return `${posixClone} (command -v node >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y nodejs npm)); node ./src/agent-cli.js --server "${server}" --key "${key}"`;
   }
 
   function renderAgents(agents) {
@@ -168,7 +225,7 @@
         body: JSON.stringify({ multiUse, label }),
       });
       $("key-output").textContent = `Pairing key: ${res.key}\n(Multi-use: ${!!res.multiUse})`;
-      $("install-snippet").textContent = buildInstallSnippet(res.key);
+      refreshInstallSnippet();
     } catch (e) {
       $("key-output").textContent =
         String(e.message || e) +
@@ -187,12 +244,14 @@
     }
   };
 
-  $("install-mode").onchange = () => {
-    const keyLine = $("key-output").textContent || "";
-    const match = keyLine.match(/Pairing key:\s*([a-z0-9]+)/i);
-    const key = match?.[1] || "YOUR_PAIRING_KEY";
-    $("install-snippet").textContent = buildInstallSnippet(key);
-  };
+  $("install-mode").onchange = () => refreshInstallSnippet();
+  $("install-shell").onchange = () => refreshInstallSnippet();
+
+  $("agent-server-url").addEventListener("input", () => {
+    const v = $("agent-server-url").value.trim();
+    if (v) sessionStorage.setItem("aj_agent_server_url", v);
+    refreshInstallSnippet();
+  });
 
   function sendCommand(agentId, type, payload, cb) {
     if (!socket) return;

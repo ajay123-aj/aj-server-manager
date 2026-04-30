@@ -72,6 +72,20 @@ body {
   color: var(--warn);
 }
 
+.hint.warning {
+  color: var(--warn);
+  border: 1px solid rgba(230, 179, 90, 0.45);
+  background: rgba(230, 179, 90, 0.08);
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+}
+
+.lbl {
+  font-size: 0.82rem;
+  color: var(--muted);
+  min-width: 7.5rem;
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;
