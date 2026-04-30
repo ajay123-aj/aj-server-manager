@@ -137,7 +137,7 @@
 
     if (shell === "cmd") {
       const winClone =
-        `(if exist aj-server-manager rmdir /s /q aj-server-manager) && git clone "${repo}" aj-server-manager && cd aj-server-manager &&`;
+        `cd /d %USERPROFILE% && (if exist aj-server-manager rmdir /s /q aj-server-manager) && git clone "${repo}" aj-server-manager && cd aj-server-manager &&`;
       if (mode === "docker") {
         return `${winClone} docker run --rm -it -v "%cd%:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
       }
@@ -145,7 +145,7 @@
     }
 
     const posixClone =
-      `rm -rf aj-server-manager && git clone "${repo}" aj-server-manager && cd aj-server-manager &&`;
+      `cd ~ && rm -rf ~/aj-server-manager && git clone "${repo}" ~/aj-server-manager && cd ~/aj-server-manager &&`;
     if (mode === "docker") {
       return `${posixClone} docker run --rm -it -v "$(pwd):/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
     }

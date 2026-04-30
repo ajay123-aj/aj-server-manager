@@ -318,6 +318,14 @@ function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
 
   socket.on("connect_error", (err) => {
     console.error("[agent] connect_error:", err.message);
+    try {
+      const u = new URL(normalized.replace(/\/$/, ""));
+      if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
+        console.error(
+          "[agent] Hint: This URL points at *this* computer. If the dashboard runs on another PC, use that PC LAN IP instead (same URL you open in browser from the remote machine)."
+        );
+      }
+    } catch (_) {}
   });
 }
 
