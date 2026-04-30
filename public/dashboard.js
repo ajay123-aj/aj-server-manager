@@ -5,8 +5,13 @@
   let token = sessionStorage.getItem("aj_admin_token") || "";
   let selectedAgentId = null;
   const shellSessions = {};
+  const isWindowsBrowser = /Windows/i.test(navigator.userAgent || "");
+  let connectivityTimer = null;
 
   $("admin-token").value = token;
+  if (isWindowsBrowser && $("install-shell")) {
+    $("install-shell").value = "powershell";
+  }
 
   function api(path, opts = {}) {
     const headers = {
@@ -160,7 +165,45 @@
 
   function refreshInstallSnippet() {
     $("install-snippet").textContent = buildInstallSnippet(currentPairingKeyFallback());
+    $("connectivity-snippet").textContent = buildConnectivitySnippet();
     updateLocalhostWarning();
+  }
+
+  async function updateConnectivityStatus() {
+    const el = $("connectivity-live-status");
+    if (!el) return;
+    const server = normalizedAgentServerUrl();
+    try {
+      const r = await fetch(`${server}/api/health`, { method: "GET" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      if (data?.ok) {
+        el.textContent = `Server reachable: ${server}`;
+        el.className = "hint hint-compact status ok";
+        return;
+      }
+      throw new Error("Bad response");
+    } catch (_) {
+      el.textContent = `Server unreachable from this browser: ${server}`;
+      el.className = "hint hint-compact status error";
+    }
+  }
+
+  function startConnectivityTimer() {
+    if (connectivityTimer) clearInterval(connectivityTimer);
+    updateConnectivityStatus();
+    connectivityTimer = setInterval(updateConnectivityStatus, 8000);
+  }
+
+  function buildConnectivitySnippet() {
+    const server = normalizedAgentServerUrl();
+    return [
+      `# Linux/macOS connectivity test (run on agent PC)`,
+      `curl -v "${server}/api/health"`,
+      ``,
+      `# Windows firewall open (run on dashboard PC PowerShell as Admin)`,
+      `netsh advfirewall firewall add rule name="AJ Dashboard 3847" dir=in action=allow protocol=TCP localport=3847`,
+    ].join("\n");
   }
 
   function buildInstallSnippet(key = "YOUR_PAIRING_KEY") {
@@ -168,6 +211,15 @@
     const mode = $("install-mode")?.value || "node";
     const shell = $("install-shell")?.value || "bash";
     const repo = "https://github.com/ajay123-aj/aj-server-manager.git";
+
+    if (shell === "powershell") {
+      const psClone =
+        `Set-Location $env:USERPROFILE; if (Test-Path .\\aj-server-manager) { Remove-Item -Recurse -Force .\\aj-server-manager }; git clone "${repo}" aj-server-manager; Set-Location .\\aj-server-manager;`;
+      if (mode === "docker") {
+        return `${psClone} docker run --rm -it -v "${"$PWD.Path"}:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
+      }
+      return `${psClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
+    }
 
     if (shell === "cmd") {
       const winClone =
@@ -267,6 +319,26 @@
     }
   };
 
+  $("btn-gen-copy-install").onclick = async () => {
+    $("key-output").textContent = "";
+    try {
+      const multiUse = $("key-multi-use").checked;
+      const label = $("key-label").value.trim();
+      const res = await api("/api/keys", {
+        method: "POST",
+        body: JSON.stringify({ multiUse, label }),
+      });
+      $("key-output").textContent = `Pairing key: ${res.key}\n(Multi-use: ${!!res.multiUse})`;
+      refreshInstallSnippet();
+      await navigator.clipboard.writeText($("install-snippet").textContent.trim());
+      $("key-output").textContent += "\nInstall command copied.";
+    } catch (e) {
+      $("key-output").textContent =
+        String(e.message || e) +
+        '\nEnsure ADMIN_TOKEN matches this server\'s ".env".';
+    }
+  };
+
   $("btn-copy-install").onclick = async () => {
     const cmd = $("install-snippet").textContent.trim();
     if (!cmd) return;
@@ -278,6 +350,28 @@
     }
   };
 
+  $("btn-copy-check-linux").onclick = async () => {
+    const server = normalizedAgentServerUrl();
+    const cmd = `curl -v "${server}/api/health"`;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      $("key-output").textContent = "Linux connectivity command copied.";
+    } catch {
+      $("key-output").textContent = "Copy failed. Select and copy manually.";
+    }
+  };
+
+  $("btn-copy-check-windows").onclick = async () => {
+    const cmd =
+      'netsh advfirewall firewall add rule name="AJ Dashboard 3847" dir=in action=allow protocol=TCP localport=3847';
+    try {
+      await navigator.clipboard.writeText(cmd);
+      $("key-output").textContent = "Windows firewall command copied.";
+    } catch {
+      $("key-output").textContent = "Copy failed. Select and copy manually.";
+    }
+  };
+
   $("install-mode").onchange = () => refreshInstallSnippet();
   $("install-shell").onchange = () => refreshInstallSnippet();
 
@@ -285,6 +379,7 @@
     const v = $("agent-server-url").value.trim();
     if (v) sessionStorage.setItem("aj_agent_server_url", v);
     refreshInstallSnippet();
+    updateConnectivityStatus();
   });
 
   function sendCommand(agentId, type, payload, cb) {
@@ -399,4 +494,5 @@
   if (token) {
     $("btn-connect").click();
   }
+  startConnectivityTimer();
 })();

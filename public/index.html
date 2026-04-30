@@ -73,20 +73,30 @@
             <div class="row">
               <select id="install-shell" aria-label="Target shell">
                 <option value="bash">Linux / macOS / Git Bash / WSL (bash)</option>
+                <option value="powershell">Windows PowerShell</option>
                 <option value="cmd">Windows cmd.exe</option>
               </select>
               <select id="install-mode" aria-label="Install mode">
                 <option value="node">Node (auto npm install)</option>
                 <option value="docker">Docker</option>
               </select>
+              <button type="button" id="btn-gen-copy-install">Generate + Copy</button>
               <button type="button" id="btn-copy-install" class="btn-ghost">Copy command</button>
             </div>
             <h4 class="snippet-title">Command shown in dashboard (paste on the other PC)</h4>
             <p class="hint hint-compact">
               This line refreshes when you change shell, Docker vs Node, or “Agent connects to”.
               Replace <code>YOUR_PAIRING_KEY</code> after you click Generate key.
+              On Windows, select <code>Windows PowerShell</code> for <code>PS&gt;</code>.
             </p>
             <pre class="snippet" id="install-snippet"></pre>
+            <h4 class="snippet-title">Connectivity check commands</h4>
+            <p class="hint hint-compact" id="connectivity-live-status">Checking server reachability...</p>
+            <div class="row">
+              <button type="button" id="btn-copy-check-linux" class="btn-ghost">Copy Linux check</button>
+              <button type="button" id="btn-copy-check-windows" class="btn-ghost">Copy Windows firewall</button>
+            </div>
+            <pre class="snippet" id="connectivity-snippet"></pre>
           </div>
           <div>
             <h2>Computers</h2>

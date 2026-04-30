@@ -152,6 +152,10 @@ button:hover {
   color: var(--danger);
 }
 
+.status.ok {
+  color: var(--ok);
+}
+
 .snippet {
   background: #0e131c;
   border: 1px solid var(--border);
