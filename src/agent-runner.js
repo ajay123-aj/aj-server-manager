@@ -16,6 +16,15 @@ const si = require("systeminformation");
 const EXEC_TIMEOUT_MS = 120000;
 const shells = new Map();
 
+function appendBootLog(line) {
+  try {
+    const p = path.join(os.homedir(), ".aj-server-manager-agent-boot.log");
+    fs.appendFileSync(p, `${new Date().toISOString()} ${line}\n`);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 function isLocalhostHost(hostname) {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
@@ -506,11 +515,20 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   }
 
   if (!pair && !(reconnectId && reconnectSecret)) {
+    appendBootLog(
+      "exit: pairing required — no saved credentials and no --key; run installer with a pairing key."
+    );
     console.error(
       "Pairing required: missing key. Run with --key <pairing-key> once, or delete config to re-enroll."
     );
     process.exit(1);
   }
+
+  appendBootLog(
+    `connecting pairingRequested=${pairingRequested} reconnect=${Boolean(
+      reconnectId && reconnectSecret && !pair
+    )} url=${serverUrl} cfg=${cfgPath}`
+  );
 
   const authBase = {
     role: "agent",
@@ -559,6 +577,7 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   }
 
   socket.on("connect", () => {
+    appendBootLog(`socket connected url=${normalized}`);
     console.log("[agent] connected");
     startTelemetryLoop();
   });
@@ -567,6 +586,7 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
     const { agentId, secret } = body || {};
     socket.agentIdStored = agentId;
     if (!agentId || !secret) return;
+    appendBootLog(`paired ok agentId=${agentId}`);
     console.log("[agent] paired; switching to persisted credentials:", agentId);
     saveConfig(cfgPath, { serverUrl: normalized, agentId, secret });
     socket.auth = {
@@ -585,11 +605,13 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   socket.on("agent:ready", (body) => {
     const { agentId } = body || {};
     socket.agentIdStored = agentId;
+    appendBootLog(`online agentId=${agentId}`);
     console.log("[agent] online as", agentId);
   });
 
   socket.on("agent:error", (e) => {
     const msg = e?.error || e;
+    appendBootLog(`agent:error ${String(msg)}`);
     console.error("[agent] error:", msg);
     if (
       String(msg).includes("Invalid reconnect credentials") ||
@@ -606,6 +628,7 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   });
 
   socket.on("disconnect", (reason) => {
+    appendBootLog(`disconnect ${String(reason)}`);
     console.log("[agent] disconnected:", reason);
     if (telemetryTimer) {
       clearInterval(telemetryTimer);
@@ -614,12 +637,18 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   });
 
   socket.on("connect_error", (err) => {
-    console.error("[agent] connect_error:", err.message);
+    const m = err?.message || String(err);
+    appendBootLog(`connect_error ${m} url=${normalized}`);
+    console.error("[agent] connect_error:", m);
     try {
       const u = new URL(normalized.replace(/\/$/, ""));
       if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
         console.error(
           "[agent] Hint: This URL points at *this* computer. If the dashboard runs on another PC, use that PC LAN IP instead (same URL you open in browser from the remote machine)."
+        );
+      } else {
+        console.error(
+          "[agent] Hint: Open dashboard PC firewall for TCP 3847; from this PC run: curl http://DASHBOARD_IP:3847/api/health"
         );
       }
     } catch (_) {}
