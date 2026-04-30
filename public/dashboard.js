@@ -605,6 +605,21 @@
       pending.delete(commandId);
       return;
     }
+    if (
+      tabFor === "service_install" ||
+      tabFor === "service_start" ||
+      tabFor === "service_stop" ||
+      tabFor === "service_remove"
+    ) {
+      const parts = [];
+      if (typeof exitCode !== "undefined") parts.push(`exit: ${exitCode}`);
+      if (error) parts.push(`Error: ${error}`);
+      if (stdout) parts.push(`[stdout]\n${stdout}`);
+      if (stderr) parts.push(`[stderr]\n${stderr}`);
+      $("services-out").textContent = parts.join("\n\n");
+      pending.delete(commandId);
+      return;
+    }
     if (tabFor === "exec") {
       const parts = [];
       if (typeof exitCode !== "undefined") parts.push(`exit: ${exitCode}`);
@@ -641,6 +656,17 @@
     $("services-out").textContent = "Loading…";
     sendCommand(selectedAgentId, "list_services", {});
   };
+
+  function runServiceControl(type) {
+    if (!selectedAgentId || !socket) return;
+    $("services-out").textContent = `Running ${type}…`;
+    sendCommand(selectedAgentId, type, { serverUrl: bestAgentServerUrl() });
+  }
+
+  $("btn-install-agent-service").onclick = () => runServiceControl("service_install");
+  $("btn-start-agent-service").onclick = () => runServiceControl("service_start");
+  $("btn-stop-agent-service").onclick = () => runServiceControl("service_stop");
+  $("btn-remove-agent-service").onclick = () => runServiceControl("service_remove");
 
   $("btn-run-exec").onclick = () => {
     const cmd = $("exec-cmd").value;

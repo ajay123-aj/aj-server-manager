@@ -156,7 +156,21 @@
           <pre class="mono" id="metrics-out"></pre>
         </div>
         <div class="tab-panel hidden" data-panel="services">
-          <button type="button" id="btn-refresh-services">Load services</button>
+          <div class="row">
+            <button type="button" id="btn-refresh-services">Load services</button>
+            <button type="button" id="btn-install-agent-service" class="btn-ghost">
+              Install Background Service
+            </button>
+            <button type="button" id="btn-start-agent-service" class="btn-ghost">
+              Start Service
+            </button>
+            <button type="button" id="btn-stop-agent-service" class="btn-ghost">
+              Stop Service
+            </button>
+            <button type="button" id="btn-remove-agent-service" class="btn-ghost">
+              Remove Service
+            </button>
+          </div>
           <pre class="mono" id="services-out"></pre>
         </div>
         <div class="tab-panel hidden" data-panel="exec">

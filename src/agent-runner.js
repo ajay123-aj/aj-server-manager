@@ -183,6 +183,81 @@ function runExec(command, cwd) {
   });
 }
 
+async function handleServiceControl(type, payload, socket) {
+  const serviceName = payload?.serviceName || "AJAgentService";
+  const serverUrl = payload?.serverUrl || socket.serverUrlUsed;
+  const scriptPath = path.join(__dirname, "agent-cli.js");
+  const nodePath = process.execPath;
+
+  if (!serverUrl && type === "service_install") {
+    return { ok: false, error: "serverUrl is required for service_install" };
+  }
+
+  if (process.platform === "win32") {
+    if (type === "service_install") {
+      const binPath = `"${nodePath}" "${scriptPath}" --server "${serverUrl}"`;
+      const esc = (s) => String(s).replace(/'/g, "''");
+      const ps = [
+        `$name='${esc(serviceName)}'`,
+        `$bin='${esc(binPath)}'`,
+        `if (-not (Get-Service -Name $name -ErrorAction SilentlyContinue)) { New-Service -Name $name -BinaryPathName $bin -DisplayName "AJ Agent Service" -StartupType Automatic }`,
+        `Start-Service -Name $name -ErrorAction SilentlyContinue`,
+        `Get-Service -Name $name | Select-Object Name,Status,StartType | ConvertTo-Json -Compress`,
+      ].join("; ");
+      const r = await runExec(`powershell -NoProfile -Command "${ps}"`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "service_start") {
+      const r = await runExec(`powershell -NoProfile -Command "Start-Service -Name '${serviceName}' -ErrorAction Stop; Get-Service -Name '${serviceName}' | Select-Object Name,Status | ConvertTo-Json -Compress"`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "service_stop") {
+      const r = await runExec(`powershell -NoProfile -Command "Stop-Service -Name '${serviceName}' -ErrorAction Stop; Get-Service -Name '${serviceName}' | Select-Object Name,Status | ConvertTo-Json -Compress"`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "service_remove") {
+      const r = await runExec(`powershell -NoProfile -Command "if (Get-Service -Name '${serviceName}' -ErrorAction SilentlyContinue) { Stop-Service -Name '${serviceName}' -ErrorAction SilentlyContinue; sc.exe delete '${serviceName}' | Out-Null; Write-Output 'removed' } else { Write-Output 'not-found' }"`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+  } else {
+    const unit = "aj-agent.service";
+    const unitContent = `[Unit]
+Description=AJ Agent Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${nodePath} ${scriptPath} --server ${serverUrl}
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
+`;
+    if (type === "service_install") {
+      const cmd = `printf '%s' "${unitContent.replace(/"/g, '\\"')}" | sudo tee /etc/systemd/system/${unit} >/dev/null && sudo systemctl daemon-reload && sudo systemctl enable --now ${unit} && sudo systemctl status ${unit} --no-pager --lines=10`;
+      const r = await runExec(cmd);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "service_start") {
+      const r = await runExec(`sudo systemctl start ${unit} && sudo systemctl status ${unit} --no-pager --lines=10`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "service_stop") {
+      const r = await runExec(`sudo systemctl stop ${unit} && sudo systemctl status ${unit} --no-pager --lines=10`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "service_remove") {
+      const r = await runExec(`sudo systemctl disable --now ${unit} 2>/dev/null; sudo rm -f /etc/systemd/system/${unit}; sudo systemctl daemon-reload; echo removed`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+  }
+
+  return { ok: false, error: `Unsupported service control type: ${type}` };
+}
+
 async function gatherMetrics() {
   const [staticData, currentLoad, mem, fsSizes, uptime] = await Promise.all([
     si.getStaticData(),
@@ -338,6 +413,16 @@ async function handleCommand(socket, msg) {
       reply({ ok: true });
       return;
     }
+    if (
+      type === "service_install" ||
+      type === "service_start" ||
+      type === "service_stop" ||
+      type === "service_remove"
+    ) {
+      const res = await handleServiceControl(type, payload || {}, socket);
+      reply(res);
+      return;
+    }
     reply({ ok: false, error: `Unknown command type: ${type}` });
   } catch (e) {
     reply({ ok: false, error: e.message || String(e) });
@@ -400,6 +485,7 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
     reconnectionDelay: 3000,
     auth,
   });
+  socket.serverUrlUsed = normalized;
 
   let telemetryTimer = null;
   async function startTelemetryLoop() {
