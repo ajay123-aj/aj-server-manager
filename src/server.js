@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const http = require("http");
+const os = require("os");
 const path = require("path");
 const express = require("express");
 const cors = require("cors");
@@ -67,6 +68,27 @@ function broadcastAgentList() {
 
 app.get("/api/health", (_, res) => {
   res.json({ ok: true, name: "aj-server-manager" });
+});
+
+app.get("/api/server-info", (_, res) => {
+  const net = os.networkInterfaces();
+  const ips = [];
+  for (const rows of Object.values(net)) {
+    for (const row of rows || []) {
+      if (
+        row &&
+        row.family === "IPv4" &&
+        !row.internal &&
+        typeof row.address === "string"
+      ) {
+        ips.push(row.address);
+      }
+    }
+  }
+  res.json({
+    port: PORT,
+    lanIps: Array.from(new Set(ips)),
+  });
 });
 
 app.get(

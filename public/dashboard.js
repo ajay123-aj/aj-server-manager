@@ -74,9 +74,7 @@
         console.error("[dashboard]", err.message)
       );
       showMain();
-      const savedAgentUrl = sessionStorage.getItem("aj_agent_server_url");
-      $("agent-server-url").value = savedAgentUrl || baseUrl();
-      refreshInstallSnippet();
+      await initAgentServerUrl();
       await refreshAgents();
     } catch (e) {
       setAuthStatus(e.message || String(e), true);
@@ -85,6 +83,42 @@
 
   function baseUrl() {
     return `${window.location.origin.replace(/\/$/, "")}`;
+  }
+
+  function pickLanUrlFromServerInfo(serverInfo) {
+    const port = serverInfo?.port || new URL(baseUrl()).port || "3847";
+    const ips = Array.isArray(serverInfo?.lanIps) ? serverInfo.lanIps : [];
+    const ip = ips.find((x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x));
+    if (!ip) return "";
+    return `http://${ip}:${port}`;
+  }
+
+  async function initAgentServerUrl() {
+    const savedAgentUrl = sessionStorage.getItem("aj_agent_server_url");
+    if (savedAgentUrl) {
+      $("agent-server-url").value = savedAgentUrl;
+      refreshInstallSnippet();
+      return;
+    }
+
+    const b = baseUrl();
+    try {
+      const parsed = new URL(b);
+      const isLocal =
+        parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      if (!isLocal) {
+        $("agent-server-url").value = b;
+        refreshInstallSnippet();
+        return;
+      }
+      const info = await api("/api/server-info");
+      const lanUrl = pickLanUrlFromServerInfo(info);
+      $("agent-server-url").value = lanUrl || b;
+      if (lanUrl) sessionStorage.setItem("aj_agent_server_url", lanUrl);
+    } catch {
+      $("agent-server-url").value = b;
+    }
+    refreshInstallSnippet();
   }
 
   function normalizedAgentServerUrl() {
