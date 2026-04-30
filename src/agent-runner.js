@@ -185,6 +185,7 @@ function runExec(command, cwd) {
 
 async function handleServiceControl(type, payload, socket) {
   const serviceName = payload?.serviceName || "AJAgentService";
+  const taskName = payload?.taskName || "AJAgentUserTask";
   const serverUrl = payload?.serverUrl || socket.serverUrlUsed;
   const scriptPath = path.join(__dirname, "agent-cli.js");
   const nodePath = process.execPath;
@@ -194,15 +195,44 @@ async function handleServiceControl(type, payload, socket) {
   }
 
   if (process.platform === "win32") {
+    const esc = (s) => String(s).replace(/'/g, "''");
+    const binPath = `"${nodePath}" "${scriptPath}" --server "${serverUrl || socket.serverUrlUsed}"`;
+
     if (type === "service_install") {
-      const binPath = `"${nodePath}" "${scriptPath}" --server "${serverUrl}"`;
-      const esc = (s) => String(s).replace(/'/g, "''");
       const ps = [
         `$name='${esc(serviceName)}'`,
         `$bin='${esc(binPath)}'`,
         `if (-not (Get-Service -Name $name -ErrorAction SilentlyContinue)) { New-Service -Name $name -BinaryPathName $bin -DisplayName "AJ Agent Service" -StartupType Automatic }`,
         `Start-Service -Name $name -ErrorAction SilentlyContinue`,
         `Get-Service -Name $name | Select-Object Name,Status,StartType | ConvertTo-Json -Compress`,
+      ].join("; ");
+      const r = await runExec(`powershell -NoProfile -Command "${ps}"`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "agent_connect") {
+      const ps = [
+        `$name='${esc(serviceName)}'`,
+        `$task='${esc(taskName)}'`,
+        `$node='${esc(nodePath)}'`,
+        `$script='${esc(scriptPath)}'`,
+        `$srv='${esc(serverUrl || socket.serverUrlUsed)}'`,
+        `if (Get-Service -Name $name -ErrorAction SilentlyContinue) { Start-Service -Name $name -ErrorAction SilentlyContinue; Get-Service -Name $name | Select-Object Name,Status,StartType | ConvertTo-Json -Compress; exit }`,
+        `$args='\"' + $script + '\" --server \"' + $srv + '\"'`,
+        `schtasks /Create /TN $task /SC ONLOGON /TR ('\"' + $node + '\" ' + $args) /F /RL LIMITED | Out-Null`,
+        `Start-Process -WindowStyle Hidden -FilePath $node -ArgumentList $args`,
+        `Write-Output ('started user task ' + $task)`,
+      ].join("; ");
+      const r = await runExec(`powershell -NoProfile -Command "${ps}"`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "agent_disconnect") {
+      const ps = [
+        `$name='${esc(serviceName)}'`,
+        `$task='${esc(taskName)}'`,
+        `if (Get-Service -Name $name -ErrorAction SilentlyContinue) { Stop-Service -Name $name -ErrorAction SilentlyContinue }`,
+        `schtasks /End /TN $task 2>$null | Out-Null`,
+        `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'agent-cli\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`,
+        `Write-Output 'agent disconnected'`,
       ].join("; ");
       const r = await runExec(`powershell -NoProfile -Command "${ps}"`);
       return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
@@ -251,6 +281,14 @@ WantedBy=multi-user.target
     }
     if (type === "service_remove") {
       const r = await runExec(`sudo systemctl disable --now ${unit} 2>/dev/null; sudo rm -f /etc/systemd/system/${unit}; sudo systemctl daemon-reload; echo removed`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "agent_connect") {
+      const r = await runExec(`sudo systemctl start ${unit} && sudo systemctl status ${unit} --no-pager --lines=5`);
+      return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
+    }
+    if (type === "agent_disconnect") {
+      const r = await runExec(`sudo systemctl stop ${unit} && sudo systemctl status ${unit} --no-pager --lines=5`);
       return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
     }
   }
@@ -417,7 +455,9 @@ async function handleCommand(socket, msg) {
       type === "service_install" ||
       type === "service_start" ||
       type === "service_stop" ||
-      type === "service_remove"
+      type === "service_remove" ||
+      type === "agent_connect" ||
+      type === "agent_disconnect"
     ) {
       const res = await handleServiceControl(type, payload || {}, socket);
       reply(res);

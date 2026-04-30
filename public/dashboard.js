@@ -250,7 +250,7 @@
         return autoClose ? `${cmd}; exit` : cmd;
       }
       if (asService) {
-        const cmd = `${psClone} $n='AJAgentService'; $bin='"' + (Get-Command node).Path + '" "' + (Resolve-Path .\\src\\agent-cli.js) + '" --server "${server}" --key "${key}"'; if (-not (Get-Service -Name $n -ErrorAction SilentlyContinue)) { New-Service -Name $n -BinaryPathName $bin -DisplayName "AJ Agent Service" -StartupType Automatic }; Start-Service -Name $n; Get-Service -Name $n | Select Name,Status,StartType`;
+        const cmd = `${psClone} $node=(Get-Command node).Path; $script=(Resolve-Path .\\src\\agent-cli.js).Path; $args="\`"$script\`" --server \`"${server}\`" --key \`"${key}\`""; schtasks /Create /TN "AJAgentUserTask" /SC ONLOGON /TR "\`"$node\`" $args" /F /RL LIMITED | Out-Null; Start-Process -WindowStyle Hidden -FilePath $node -ArgumentList $args`;
         return autoClose ? `${cmd}; exit` : cmd;
       }
       const cmd = `${psClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
@@ -667,7 +667,9 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
       tabFor === "service_install" ||
       tabFor === "service_start" ||
       tabFor === "service_stop" ||
-      tabFor === "service_remove"
+      tabFor === "service_remove" ||
+      tabFor === "agent_connect" ||
+      tabFor === "agent_disconnect"
     ) {
       const parts = [];
       if (typeof exitCode !== "undefined") parts.push(`exit: ${exitCode}`);
@@ -713,6 +715,18 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
     if (!selectedAgentId || !socket) return;
     $("services-out").textContent = "Loading…";
     sendCommand(selectedAgentId, "list_services", {});
+  };
+
+  $("btn-agent-connect").onclick = () => {
+    if (!selectedAgentId || !socket) return;
+    $("services-out").textContent = "Connecting agent…";
+    sendCommand(selectedAgentId, "agent_connect", { serverUrl: bestAgentServerUrl() });
+  };
+
+  $("btn-agent-disconnect").onclick = () => {
+    if (!selectedAgentId || !socket) return;
+    $("services-out").textContent = "Disconnecting agent…";
+    sendCommand(selectedAgentId, "agent_disconnect", {});
   };
 
 
