@@ -92,6 +92,7 @@
               This line refreshes when you change shell, Docker vs Node, or “Agent connects to”.
               Replace <code>YOUR_PAIRING_KEY</code> after you click Generate key.
               On Windows, select <code>Windows PowerShell</code> for <code>PS&gt;</code>.
+              The installer runs <code>npm</code> through <code>cmd.exe</code> so restrictive PowerShell execution policy does not block <code>npm.ps1</code>.
               The first bootstraps pairing with the key (once); ongoing log-on task/service uses saved credentials — do not bake the pairing key into auto-start targets.
             </p>
             <pre class="snippet" id="install-snippet"></pre>
