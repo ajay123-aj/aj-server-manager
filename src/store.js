@@ -31,14 +31,14 @@ function writeStore(store) {
   fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
 }
 
-function createPairingKey(label, multiUse = false) {
+function createPairingKey(label) {
   const store = readStore();
   const key = uuidv4().replace(/-/g, "").slice(0, 24);
   const record = {
     id: uuidv4(),
     key,
     label: label || "",
-    multiUse: !!multiUse,
+    multiUse: false,
     createdAt: new Date().toISOString(),
     used: false,
     useCount: 0,
@@ -50,19 +50,17 @@ function createPairingKey(label, multiUse = false) {
 
 function consumePairingKey(key) {
   const store = readStore();
-  const idx = store.pairingKeys.findIndex((k) => k.key === key && !k.revokedAt);
-  if (idx === -1) return null;
+  const idx = store.pairingKeys.findIndex((k) => k.key === key);
+  if (idx === -1) return { ok: false, reason: "not_found" };
   const rec = store.pairingKeys[idx];
-  const multiUse = !!rec.multiUse;
-  if (!multiUse && rec.used) return null;
+  if (rec.revokedAt) return { ok: false, reason: "revoked" };
+  if (rec.used) return { ok: false, reason: "already_used" };
   rec.useCount = (rec.useCount || 0) + 1;
   rec.lastUsedAt = new Date().toISOString();
-  if (!multiUse) {
-    rec.used = true;
-    rec.usedAt = rec.lastUsedAt;
-  }
+  rec.used = true;
+  rec.usedAt = rec.lastUsedAt;
   writeStore(store);
-  return rec;
+  return { ok: true, record: rec };
 }
 
 function upsertAgentFromRegister({ id, secret, hostname, os, platform, arch, version }) {

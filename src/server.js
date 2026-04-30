@@ -122,13 +122,13 @@ app.post(
   authAdmin,
   express.json(),
   (req, res) => {
-    const { label, multiUse } = req.body || {};
-    const row = store.createPairingKey(label, !!multiUse);
+    const { label } = req.body || {};
+    const row = store.createPairingKey(label);
     res.json({
       key: row.key,
       id: row.id,
       label: row.label,
-      multiUse: row.multiUse,
+      multiUse: false,
       createdAt: row.createdAt,
     });
   }
@@ -244,8 +244,15 @@ io.on("connection", (socket) => {
       store.touchAgent(agentId);
     } else if (pairingKey) {
       const consumed = store.consumePairingKey(pairingKey);
-      if (!consumed) {
-        socket.emit("agent:error", { error: "Invalid or revoked pairing key" });
+      if (!consumed?.ok) {
+        const reason = consumed?.reason;
+        const error =
+          reason === "already_used"
+            ? "Pairing key already used"
+            : reason === "revoked"
+              ? "Pairing key revoked"
+              : "Invalid pairing key";
+        socket.emit("agent:error", { error });
         socket.disconnect(true);
         return;
       }

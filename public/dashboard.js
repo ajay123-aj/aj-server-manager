@@ -411,13 +411,12 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
   $("btn-gen-key").onclick = async () => {
     $("key-output").textContent = "";
     try {
-      const multiUse = $("key-multi-use").checked;
       const label = $("key-label").value.trim();
       const res = await api("/api/keys", {
         method: "POST",
-        body: JSON.stringify({ multiUse, label }),
+        body: JSON.stringify({ multiUse: false, label }),
       });
-      $("key-output").textContent = `Pairing key: ${res.key}\n(Multi-use: ${!!res.multiUse})`;
+      $("key-output").textContent = `Pairing key: ${res.key}\n(One-time key)`;
       refreshInstallSnippet();
     } catch (e) {
       $("key-output").textContent =
@@ -429,13 +428,12 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
   $("btn-gen-copy-install").onclick = async () => {
     $("key-output").textContent = "";
     try {
-      const multiUse = $("key-multi-use").checked;
       const label = $("key-label").value.trim();
       const res = await api("/api/keys", {
         method: "POST",
-        body: JSON.stringify({ multiUse, label }),
+        body: JSON.stringify({ multiUse: false, label }),
       });
-      $("key-output").textContent = `Pairing key: ${res.key}\n(Multi-use: ${!!res.multiUse})`;
+      $("key-output").textContent = `Pairing key: ${res.key}\n(One-time key)`;
       refreshInstallSnippet();
       await navigator.clipboard.writeText($("install-snippet").textContent.trim());
       $("key-output").textContent += "\nInstall command copied.";

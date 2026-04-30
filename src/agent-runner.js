@@ -480,13 +480,14 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   }
 
   const existing = loadConfig(cfgPath);
-  if (existing?.serverUrl && existing?.agentId && existing?.secret && !pair) {
+  if (existing?.serverUrl && existing?.agentId && existing?.secret) {
     try {
       const u = new URL(serverUrl);
       const su = new URL(existing.serverUrl);
       if (u.origin === su.origin) {
         reconnectId = existing.agentId;
         reconnectSecret = existing.secret;
+        pair = undefined;
       }
     } catch (_) {}
   }
