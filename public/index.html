@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AJ Server Manager</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <header class="header">
+        <h1>AJ Server Manager</h1>
+        <p class="tagline">
+          Pair PCs with a key, then monitor services, run commands, and use a remote shell — all from this dashboard.
+        </p>
+      </header>
+
+      <section class="card" id="auth-section">
+        <h2>Admin access</h2>
+        <p class="hint">
+          Set <code>ADMIN_TOKEN</code> in the server <code>.env</code> for production. Enter the same token here.
+        </p>
+        <div class="row">
+          <input
+            type="password"
+            id="admin-token"
+            placeholder="Admin token"
+            autocomplete="off"
+          />
+          <button type="button" id="btn-connect">Connect dashboard</button>
+        </div>
+        <p class="status" id="auth-status"></p>
+      </section>
+
+      <section class="card hidden" id="main-section">
+        <div class="grid-2">
+          <div>
+            <h2>Pairing keys</h2>
+            <p class="hint">
+              Create a multi-use key to enroll many PCs, or a one-time key per machine for stricter control.
+            </p>
+            <label class="check">
+              <input type="checkbox" id="key-multi-use" checked />
+              Multi-use (same key for many computers)
+            </label>
+            <div class="row">
+              <input type="text" id="key-label" placeholder="Label (optional)" />
+              <button type="button" id="btn-gen-key">Generate key</button>
+            </div>
+            <pre class="snippet" id="key-output"></pre>
+            <h3>Install on a PC</h3>
+            <p class="hint">
+              Use one command only on the other PC (PowerShell). Replace server IP, key, and repo URL.
+            </p>
+            <div class="row">
+              <button type="button" id="btn-copy-install" class="btn-ghost">Copy command</button>
+            </div>
+            <pre class="snippet" id="install-snippet"></pre>
+          </div>
+          <div>
+            <h2>Computers</h2>
+            <table class="agents">
+              <thead>
+                <tr>
+                  <th>Hostname</th>
+                  <th>Platform</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="agents-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <aside class="card hidden overlay" id="detail-panel">
+        <div class="detail-head">
+          <h2 id="detail-title">Computer</h2>
+          <button type="button" class="btn-ghost" id="btn-close-detail">Close</button>
+        </div>
+        <div class="tabs">
+          <button type="button" class="tab active" data-tab="monitor">Monitor</button>
+          <button type="button" class="tab" data-tab="services">Services</button>
+          <button type="button" class="tab" data-tab="exec">Run command</button>
+          <button type="button" class="tab" data-tab="shell">Shell</button>
+        </div>
+        <div class="tab-panel" data-panel="monitor">
+          <button type="button" id="btn-refresh-metrics">Refresh metrics</button>
+          <pre class="mono" id="metrics-out"></pre>
+        </div>
+        <div class="tab-panel hidden" data-panel="services">
+          <button type="button" id="btn-refresh-services">Load services</button>
+          <pre class="mono" id="services-out"></pre>
+        </div>
+        <div class="tab-panel hidden" data-panel="exec">
+          <textarea id="exec-cmd" rows="3" placeholder="e.g. dir  or  sudo apt-get update"></textarea>
+          <div class="row">
+            <button type="button" id="btn-run-exec">Execute</button>
+          </div>
+          <pre class="mono" id="exec-out"></pre>
+        </div>
+        <div class="tab-panel hidden" data-panel="shell">
+          <p class="hint">
+            Opens <code>PowerShell</code> on Windows or <code>bash</code> on Linux. Output streams below — type commands and Send.
+          </p>
+          <div class="row">
+            <button type="button" id="btn-shell-start">Start shell</button>
+            <button type="button" id="btn-shell-stop">Stop shell</button>
+          </div>
+          <textarea id="shell-out" rows="12" readonly></textarea>
+          <div class="row">
+            <input type="text" id="shell-in" placeholder="Command line" autocomplete="off" />
+            <button type="button" id="btn-shell-send">Send</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
