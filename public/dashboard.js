@@ -50,6 +50,36 @@
     });
   }
 
+  /** http:// LAN often rejects navigator.clipboard; textarea + execCommand runs in the same user gesture. */
+  async function copyToClipboard(text) {
+    const payload = String(text ?? "");
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload);
+        return true;
+      }
+    } catch (_) {
+      /* fall through */
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = payload;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-3000px";
+      ta.style.top = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, payload.length);
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function setAuthStatus(msg, isErr) {
     const el = $("auth-status");
     el.textContent = msg;
@@ -79,8 +109,13 @@
     focusComputersSection();
   }
 
-  function startPendingEnrollmentPoll(labelSnapshot) {
+  async function startPendingEnrollmentPoll(labelSnapshot) {
     pendingConnectLabel = labelSnapshot || "";
+    try {
+      await refreshAgents();
+    } catch (_) {
+      /* refreshAgents surfaces errors in computersHint */
+    }
     pendingAgentsBaseline = lastAgentsListCount;
     if (pendingConnectTimer) clearInterval(pendingConnectTimer);
     pendingConnectTimer = setInterval(() => refreshAgents(), 2500);
@@ -601,7 +636,7 @@ systemctl daemon-reload && systemctl enable --now aj-server-manager.service && s
       $("key-output").textContent = `Pairing key: ${res.key}\nLabel: ${res.label || ""}\n${mt}`;
       $("key-output").textContent +=
         "\n\nRun the command on the other PC. Waiting for connection… Close this popup any time.";
-      startPendingEnrollmentPoll(label);
+      await startPendingEnrollmentPoll(label);
       refreshInstallSnippet();
     } catch (e) {
       $("key-output").textContent =
@@ -629,10 +664,13 @@ systemctl daemon-reload && systemctl enable --now aj-server-manager.service && s
       $("key-output").textContent = `Pairing key: ${res.key}\nLabel: ${res.label || ""}\n${mt}`;
       $("key-output").textContent +=
         "\n\nRun the command on the other PC. Waiting for connection… Close this popup any time.";
-      startPendingEnrollmentPoll(label);
+      await startPendingEnrollmentPoll(label);
       refreshInstallSnippet();
-      await navigator.clipboard.writeText($("install-snippet").textContent.trim());
-      $("key-output").textContent += "\nInstall command copied.";
+      const snippet = $("install-snippet").textContent.trim();
+      const copied = await copyToClipboard(snippet);
+      $("key-output").textContent += copied
+        ? "\nInstall command copied to clipboard."
+        : "\nCopy failed — select the command in the box below (Ctrl+A, Ctrl+C). On http:// LAN, browsers may block auto-copy.";
     } catch (e) {
       $("key-output").textContent =
         String(e.message || e) +
@@ -643,38 +681,33 @@ systemctl daemon-reload && systemctl enable --now aj-server-manager.service && s
   $("btn-copy-install").onclick = async () => {
     const cmd = $("install-snippet").textContent.trim();
     if (!cmd) return;
-    try {
-      await navigator.clipboard.writeText(cmd);
-      $("key-output").textContent = "Install command copied.";
-    } catch (e) {
-      $("key-output").textContent = "Copy failed. Select and copy manually.";
-    }
+    const ok = await copyToClipboard(cmd);
+    $("key-output").textContent = ok
+      ? "Install command copied."
+      : "Copy failed — select the command manually (LAN http:// often blocks clipboard).";
   };
 
   $("btn-copy-check-linux").onclick = async () => {
     const server = normalizedAgentServerUrl();
-    const cmd = `curl -v "${server}/api/health"`;
-    try {
-      await navigator.clipboard.writeText(cmd);
-      $("key-output").textContent = "Linux connectivity command copied.";
-    } catch {
-      $("key-output").textContent = "Copy failed. Select and copy manually.";
-    }
+    const cmd = `curl.exe -fsS "${server}/api/health"`;
+    const ok = await copyToClipboard(cmd);
+    $("key-output").textContent = ok
+      ? "Connectivity command copied."
+      : "Copy failed — type or select from connectivity box.";
   };
 
   $("btn-copy-check-windows").onclick = async () => {
     const cmd =
       'netsh advfirewall firewall add rule name="AJ Dashboard 3847" dir=in action=allow protocol=TCP localport=3847';
-    try {
-      await navigator.clipboard.writeText(cmd);
-      $("key-output").textContent = "Windows firewall command copied.";
-    } catch {
-      $("key-output").textContent = "Copy failed. Select and copy manually.";
-    }
+    const ok = await copyToClipboard(cmd);
+    $("key-output").textContent = ok
+      ? "Windows firewall command copied."
+      : "Copy failed — select from connectivity box.";
   };
 
   $("btn-open-add-computer").onclick = () => {
-    $("add-computer-panel").classList.toggle("hidden", false);
+    $("add-computer-panel").classList.remove("hidden");
+    $("key-label").focus?.();
   };
 
   $("btn-close-add-computer").onclick = () => {

@@ -83,6 +83,11 @@ body {
   font-size: 0.86rem;
 }
 
+.hint-after-row {
+  display: block;
+  margin-top: 0.35rem;
+}
+
 .hint.warning {
   color: var(--warn);
   border: 1px solid rgba(230, 179, 90, 0.45);
@@ -185,7 +190,7 @@ button:hover {
 
 .add-computer-popup {
   position: fixed;
-  z-index: 50;
+  z-index: 1000;
   inset: 4% 6%;
   overflow: auto;
   background: var(--panel);
@@ -255,6 +260,13 @@ button:hover {
 
 .hidden {
   display: none !important;
+}
+
+.row-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .overlay {
