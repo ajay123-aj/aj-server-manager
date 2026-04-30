@@ -26,18 +26,32 @@ function ensureDependenciesInstalled() {
   }
 
   console.log("[agent] Missing dependencies detected. Running npm install...");
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  const result = spawnSync(npmCmd, ["install"], {
-    stdio: "inherit",
-    cwd: path.join(__dirname, ".."),
-    env: process.env,
-  });
-  if (result.error || result.status !== 0) {
-    console.error(
-      "[agent] Auto install failed. Please install Node/npm and run: npm install"
-    );
-    process.exit(result.status || 1);
+  const cwd = path.join(__dirname, "..");
+  const attempts =
+    process.platform === "win32"
+      ? [
+          { cmd: "npm.cmd", args: ["install"] },
+          { cmd: "npm.exe", args: ["install"] },
+          // Works even when npm is available only via shell shim.
+          { cmd: "cmd.exe", args: ["/d", "/s", "/c", "npm install"] },
+          { cmd: "powershell.exe", args: ["-NoProfile", "-Command", "npm install"] },
+        ]
+      : [{ cmd: "npm", args: ["install"] }];
+
+  for (const a of attempts) {
+    const result = spawnSync(a.cmd, a.args, {
+      stdio: "inherit",
+      cwd,
+      env: process.env,
+      windowsHide: true,
+    });
+    if (!result.error && result.status === 0) return;
   }
+
+  console.error(
+    "[agent] Auto install failed. Install Node.js LTS (includes npm), then run: npm install"
+  );
+  process.exit(1);
 }
 
 const argv = parseArgs(process.argv.slice(2));

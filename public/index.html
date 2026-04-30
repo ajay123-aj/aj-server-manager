@@ -54,10 +54,8 @@
               (<code>http://IP:PORT</code>): use the LAN address of
               <em>this</em> dashboard PC — not
               <code>localhost</code> when the agent runs on another machine.
-              The pasted command jumps to your home/profile first so it does not nest
-              <code>aj-server-manager/aj-server-manager/...</code>. The command still
-              <strong>removes <code>~/aj-server-manager</code></strong> (Linux) or
-              <strong><code>%USERPROFILE%\\aj-server-manager</code></strong> (Windows), then clones fresh.
+              The pasted command uses clone-or-pull behavior so it updates existing
+              <code>aj-server-manager</code> safely without deleting locked files.
             </p>
             <div class="row">
               <label class="lbl" for="agent-server-url">Agent connects to</label>

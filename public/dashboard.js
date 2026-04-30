@@ -214,7 +214,7 @@
 
     if (shell === "powershell") {
       const psClone =
-        `Set-Location $env:USERPROFILE; if (Test-Path .\\aj-server-manager) { Remove-Item -Recurse -Force .\\aj-server-manager }; git clone "${repo}" aj-server-manager; Set-Location .\\aj-server-manager;`;
+        `Set-Location $env:USERPROFILE; if (Test-Path .\\aj-server-manager\\.git) { git -C .\\aj-server-manager pull } else { git clone "${repo}" aj-server-manager }; Set-Location .\\aj-server-manager;`;
       if (mode === "docker") {
         return `${psClone} docker run --rm -it -v "${"$PWD.Path"}:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
       }
@@ -223,7 +223,7 @@
 
     if (shell === "cmd") {
       const winClone =
-        `cd /d %USERPROFILE% && (if exist aj-server-manager rmdir /s /q aj-server-manager) && git clone "${repo}" aj-server-manager && cd aj-server-manager &&`;
+        `cd /d %USERPROFILE% && (git -C aj-server-manager pull || git clone "${repo}" aj-server-manager) && cd aj-server-manager &&`;
       if (mode === "docker") {
         return `${winClone} docker run --rm -it -v "%cd%:/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
       }
@@ -231,7 +231,7 @@
     }
 
     const posixClone =
-      `cd ~ && rm -rf ~/aj-server-manager && git clone "${repo}" ~/aj-server-manager && cd ~/aj-server-manager &&`;
+      `(git -C ~/aj-server-manager pull || git clone "${repo}" ~/aj-server-manager) && cd ~/aj-server-manager &&`;
     if (mode === "docker") {
       return `${posixClone} docker run --rm -it -v "$(pwd):/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
     }
