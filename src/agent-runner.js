@@ -497,22 +497,22 @@ async function runAgent({
   exitAfterReady = false,
 }) {
   const cfgPath = configPath(configFile);
-  let pair = pairingKey;
+  /** True only when CLI passed --key/-k. Env AJ_PAIRING_KEY must NOT block reconnect after enroll. */
+  const cliExplicitPairingKey =
+    pairingKey !== undefined &&
+    pairingKey !== null &&
+    String(pairingKey).trim() !== "";
+
+  let pair = "";
   let reconnectId = reconnect?.agentId;
   let reconnectSecret = reconnect?.secret;
-
-  if ((!pair || pair === "env") && process.env.AJ_PAIRING_KEY) {
-    pair = process.env.AJ_PAIRING_KEY;
-  }
-
-  const pairingRequested = !!(pair && String(pair).trim());
 
   const existing = loadConfig(cfgPath);
   if (
     existing?.serverUrl &&
     existing?.agentId &&
     existing?.secret &&
-    !pairingRequested
+    !cliExplicitPairingKey
   ) {
     try {
       const u = new URL(serverUrl);
@@ -520,10 +520,18 @@ async function runAgent({
       if (u.origin === su.origin) {
         reconnectId = existing.agentId;
         reconnectSecret = existing.secret;
-        pair = undefined;
+        pair = "";
       }
     } catch (_) {}
   }
+  if (!cliExplicitPairingKey && !(reconnectId && reconnectSecret) && process.env.AJ_PAIRING_KEY) {
+    pair = String(process.env.AJ_PAIRING_KEY).trim();
+  }
+  if (cliExplicitPairingKey) {
+    pair = String(pairingKey).trim();
+  }
+
+  const pairingRequested = !!(pair && String(pair).trim());
 
   if (!pair && !(reconnectId && reconnectSecret)) {
     appendBootLog(
