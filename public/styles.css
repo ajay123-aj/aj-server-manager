@@ -72,6 +72,17 @@ body {
   color: var(--warn);
 }
 
+.snippet-title {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.hint-compact {
+  margin: 0 0 0.65rem;
+  font-size: 0.86rem;
+}
+
 .hint.warning {
   color: var(--warn);
   border: 1px solid rgba(230, 179, 90, 0.45);
