@@ -11,6 +11,7 @@ function parseArgs(raw) {
     if (a === "--server" || a === "-s") out.server = raw[++i];
     else if (a === "--key" || a === "-k") out.key = raw[++i];
     else if (a === "--config" || a === "-c") out.config = raw[++i];
+    else if (a === "--pair-once") out.pairOnce = true;
     else out._.push(a);
   }
   return out;
@@ -66,6 +67,7 @@ if (!serverUrl) {
   console.error(`
 Usage:
   aj-agent --server http://YOUR_DASHBOARD_IP:3847 --key YOUR_PAIRING_KEY
+  aj-agent --server URL --key KEY --pair-once   # enroll then exit 0 (for install scripts)
 
 Environment (optional):
   AJ_SERVER_URL   Base URL of the dashboard
@@ -88,4 +90,5 @@ runAgent({
   serverUrl,
   pairingKey: pairingKey || undefined,
   configFile: argv.config || undefined,
+  exitAfterReady: Boolean(argv.pairOnce),
 });

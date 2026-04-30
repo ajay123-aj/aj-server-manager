@@ -489,7 +489,13 @@ async function handleCommand(socket, msg) {
   }
 }
 
-async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
+async function runAgent({
+  serverUrl,
+  pairingKey,
+  reconnect,
+  configFile,
+  exitAfterReady = false,
+}) {
   const cfgPath = configPath(configFile);
   let pair = pairingKey;
   let reconnectId = reconnect?.agentId;
@@ -557,14 +563,59 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   const socket = io(normalized, {
     path: "/socket.io/",
     transports: ["websocket", "polling"],
-    reconnection: true,
-    reconnectionAttempts: Infinity,
+    reconnection: exitAfterReady ? false : true,
+    reconnectionAttempts: exitAfterReady ? 0 : Infinity,
     reconnectionDelay: 3000,
     auth,
   });
   socket.serverUrlUsed = normalized;
   if (reconnectId && reconnectSecret && !pair) {
     socket.agentIdStored = reconnectId;
+  }
+
+  /** One-shot pairing / verify: exit after first stable session so install scripts show success in-console. */
+  let enrollWatchTimer = null;
+  let enrollTerminal = false;
+  function clearEnrollWatch() {
+    if (enrollWatchTimer) {
+      clearTimeout(enrollWatchTimer);
+      enrollWatchTimer = null;
+    }
+  }
+  function finishEnrollOk() {
+    if (!exitAfterReady || enrollTerminal) return;
+    enrollTerminal = true;
+    clearEnrollWatch();
+    appendBootLog("pair-once: success, exiting");
+    console.log("[agent] Enrollment OK — this window can close. Long-running agent will use saved credentials.");
+    try {
+      socket.disconnect();
+    } catch (_) {}
+    process.exit(0);
+  }
+  function finishEnrollFail() {
+    if (!exitAfterReady || enrollTerminal) return;
+    enrollTerminal = true;
+    clearEnrollWatch();
+    appendBootLog("pair-once: failed");
+    try {
+      socket.disconnect();
+    } catch (_) {}
+    process.exit(1);
+  }
+  if (exitAfterReady) {
+    enrollWatchTimer = setTimeout(() => {
+      if (enrollTerminal) return;
+      console.error(
+        "[agent] --pair-once timed out (120s). Check dashboard URL, TCP 3847 firewall on dashboard PC, and pairing key."
+      );
+      appendBootLog("pair-once: timeout");
+      enrollTerminal = true;
+      try {
+        socket.disconnect();
+      } catch (_) {}
+      process.exit(1);
+    }, 120000);
   }
 
   let telemetryTimer = null;
@@ -612,12 +663,25 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
     socket.agentIdStored = agentId;
     appendBootLog(`online agentId=${agentId}`);
     console.log("[agent] online as", agentId);
+    if (exitAfterReady) finishEnrollOk();
   });
 
   socket.on("agent:error", (e) => {
     const msg = e?.error || e;
     appendBootLog(`agent:error ${String(msg)}`);
     console.error("[agent] error:", msg);
+    if (exitAfterReady) {
+      if (
+        String(msg).includes("Invalid reconnect credentials") ||
+        String(msg).includes("Pairing key already used")
+      ) {
+        console.error(
+          `[agent] If you reinstalled the dashboard or removed this PC, delete ${cfgPath} and enroll again with a fresh pairing key.`
+        );
+      }
+      finishEnrollFail();
+      return;
+    }
     if (
       String(msg).includes("Invalid reconnect credentials") ||
       String(msg).includes("Pairing key already used")
