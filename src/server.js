@@ -122,7 +122,10 @@ app.post(
   authAdmin,
   express.json(),
   (req, res) => {
-    const { label } = req.body || {};
+    const label = String(req.body?.label || "").trim();
+    if (!label) {
+      return res.status(400).json({ error: "Label is required" });
+    }
     const row = store.createPairingKey(label);
     res.json({
       key: row.key,
@@ -131,6 +134,23 @@ app.post(
       multiUse: false,
       createdAt: row.createdAt,
     });
+  }
+);
+
+app.patch(
+  "/api/agents/:agentId",
+  warnIfNoAdminToken,
+  authAdmin,
+  (req, res) => {
+    const agentId = req.params.agentId;
+    const label = String(req.body?.label || "").trim();
+    if (!label) {
+      return res.status(400).json({ error: "Label is required" });
+    }
+    const ok = store.setAgentLabel(agentId, label);
+    if (!ok) return res.status(404).json({ error: "Agent not found" });
+    broadcastAgentList();
+    return res.json({ ok: true, label });
   }
 );
 
@@ -208,7 +228,8 @@ io.on("connection", (socket) => {
   }
 
   if (role === "agent") {
-    const pairingKey =
+    /** Raw string — parsing is tolerant (quotes, casing, stray dashes) inside consumePairingKey */
+    const pairingKeyRaw =
       socket.handshake.auth?.pairingKey ||
       socket.handshake.query?.pairingKey ||
       "";
@@ -230,6 +251,7 @@ io.on("connection", (socket) => {
     let agentId;
     let agentSecret;
     let isReconnect = false;
+    let enrollLabel = "";
 
     if (reconnectAgentId && reconnectSecret) {
       isReconnect = true;
@@ -242,8 +264,8 @@ io.on("connection", (socket) => {
       agentId = cred.id;
       agentSecret = cred.secret;
       store.touchAgent(agentId);
-    } else if (pairingKey) {
-      const consumed = store.consumePairingKey(pairingKey);
+    } else if (String(pairingKeyRaw || "").trim()) {
+      const consumed = store.consumePairingKey(pairingKeyRaw);
       if (!consumed?.ok) {
         const reason = consumed?.reason;
         const error =
@@ -258,6 +280,7 @@ io.on("connection", (socket) => {
       }
       agentId = uuidv4();
       agentSecret = uuidv4().replace(/-/g, "") + uuidv4().replace(/-/g, "");
+      enrollLabel = String(consumed.record?.label ?? "").trim();
     } else {
       socket.disconnect(true);
       return;
@@ -271,6 +294,7 @@ io.on("connection", (socket) => {
       platform,
       arch,
       version,
+      ...(isReconnect ? {} : { label: enrollLabel }),
     });
 
     addAgentSocket(agentId, socket.id);

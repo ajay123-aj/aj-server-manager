@@ -33,14 +33,18 @@
       </section>
 
       <section class="card hidden" id="main-section">
-        <div class="grid-2">
-          <div>
+        <div class="grid-2 single-col">
+          <div class="hidden add-computer-popup" id="add-computer-panel">
+            <div class="detail-head">
+              <h2>Add Computer</h2>
+              <button type="button" class="btn-ghost" id="btn-close-add-computer">Close</button>
+            </div>
             <h2>Pairing keys</h2>
             <p class="hint">
               Pairing key is one-time use only (unique). Reusing same key on another PC shows "already used".
             </p>
             <div class="row">
-              <input type="text" id="key-label" placeholder="Label (optional)" />
+              <input type="text" id="key-label" placeholder="Label (required, e.g. Office-PC-1)" />
               <button type="button" id="btn-gen-key">Generate key</button>
             </div>
             <pre class="snippet" id="key-output"></pre>
@@ -93,11 +97,15 @@
             </div>
             <pre class="snippet" id="connectivity-snippet"></pre>
           </div>
-          <div>
-            <h2>Computers</h2>
+          <div id="computers">
+            <div class="detail-head">
+              <h2>Computers</h2>
+              <button type="button" id="btn-open-add-computer">Add Computer</button>
+            </div>
             <table class="agents">
               <thead>
                 <tr>
+                  <th>Label</th>
                   <th>Hostname</th>
                   <th>Platform</th>
                   <th>Status</th>
@@ -106,6 +114,7 @@
               </thead>
               <tbody id="agents-body"></tbody>
             </table>
+            <p class="hint hint-compact" id="computers-hint" aria-live="polite"></p>
           </div>
         </div>
       </section>

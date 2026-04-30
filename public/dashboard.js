@@ -2,7 +2,15 @@
   const $ = (id) => document.getElementById(id);
 
   let socket = null;
+  const pageParams = new URLSearchParams(window.location.search);
   let token = sessionStorage.getItem("aj_admin_token") || "";
+  if (!token) {
+    const tokenFromQuery = pageParams.get("token") || "";
+    if (tokenFromQuery) {
+      token = tokenFromQuery;
+      sessionStorage.setItem("aj_admin_token", token);
+    }
+  }
   let selectedAgentId = null;
   const shellSessions = {};
   const isWindowsBrowser = /Windows/i.test(navigator.userAgent || "");
@@ -11,6 +19,8 @@
   let monitorTimer = null;
   let activeTab = "monitor";
   const monitorHistory = { cpu: [], mem: [], disk: [] };
+  let pendingConnectLabel = "";
+  let pendingConnectTimer = null;
 
   $("admin-token").value = token;
   if (isWindowsBrowser && $("install-shell")) {
@@ -45,6 +55,31 @@
   function showMain() {
     $("auth-section").classList.toggle("hidden", true);
     $("main-section").classList.toggle("hidden", false);
+    $("add-computer-panel").classList.toggle("hidden", true);
+  }
+
+  function computersHint(msg) {
+    const el = $("computers-hint");
+    if (el) el.textContent = msg || "";
+  }
+
+  function focusComputersSection() {
+    const el = document.getElementById("computers");
+    requestAnimationFrame(() => {
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function stripTokenFromUrlPreserveHash() {
+    try {
+      const u = new URL(window.location.href);
+      if (!u.searchParams.has("token")) return;
+      u.searchParams.delete("token");
+      const qs = u.searchParams.toString();
+      window.history.replaceState({}, "", `${u.pathname}${qs ? `?${qs}` : ""}${u.hash}`);
+    } catch {
+      /* ignore */
+    }
   }
 
   $("btn-connect").onclick = async () => {
@@ -84,12 +119,26 @@
         console.error("[dashboard]", err.message)
       );
       showMain();
+      stripTokenFromUrlPreserveHash();
       await initAgentServerUrl();
       await refreshAgents();
+      if (window.location.hash === "#computers") {
+        focusComputersSection();
+      }
     } catch (e) {
       setAuthStatus(e.message || String(e), true);
     }
   };
+
+  window.addEventListener("hashchange", () => {
+    if (
+      window.location.hash === "#computers" &&
+      socket &&
+      !$("main-section").classList.contains("hidden")
+    ) {
+      focusComputersSection();
+    }
+  });
 
   function baseUrl() {
     return `${window.location.origin.replace(/\/$/, "")}`;
@@ -299,23 +348,114 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
     return `${posixClone} (command -v node >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y nodejs npm)); node ./src/agent-cli.js --server "${server}" --key "${key}"`;
   }
 
+  async function editAgentLabel(agent) {
+    computersHint("");
+    const cur = (agent.label && String(agent.label).trim()) || "";
+    const v = prompt(
+      `Dashboard label for this computer (required):\nHostname: ${agent.hostname}`,
+      cur || ""
+    );
+    if (v === null) return;
+    const label = v.trim();
+    if (!label) {
+      computersHint("Label cannot be empty.");
+      return;
+    }
+    try {
+      await api(`/api/agents/${encodeURIComponent(agent.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ label }),
+      });
+      computersHint(`Label saved: ${label}`);
+      await refreshAgents();
+    } catch (e) {
+      computersHint(`Label save failed: ${e.message || e}`);
+    }
+  }
+
+  function rowAgentConnect(agent) {
+    computersHint("");
+    if (!socket) {
+      computersHint("Dashboard is not connected. Reconnect using “Connect dashboard”.");
+      return;
+    }
+    if (!agent.online) {
+      computersHint(
+        "This PC shows Offline — the dashboard cannot reach that computer until the agent process is running there. On Linux start: sudo systemctl start aj-agent.service (or rerun the install one-liner). Use Connect again after it is online."
+      );
+      return;
+    }
+    computersHint(`Connecting agent service on ${agent.hostname}…`);
+    sendCommand(agent.id, "agent_connect", { serverUrl: bestAgentServerUrl() }, (_, ack) => {
+      computersHint(
+        ack?.ok
+          ? `Connect sent to ${agent.hostname}. Starts systemd/task on that PC — status updates in a few seconds.`
+          : `Connect failed: ${ack?.error || "unknown"}`
+      );
+    });
+  }
+
+  function rowAgentDisconnect(agent) {
+    computersHint("");
+    if (!socket) {
+      computersHint("Dashboard is not connected. Reconnect using “Connect dashboard”.");
+      return;
+    }
+    if (!agent.online) {
+      computersHint(
+        "Offline: disconnect only works while the agent is connected. If the agent is stopped on the PC, it is already disconnected from this dashboard."
+      );
+      return;
+    }
+    computersHint(`Stopping agent service on ${agent.hostname}…`);
+    sendCommand(agent.id, "agent_disconnect", {}, (_, ack) => {
+      computersHint(
+        ack?.ok
+          ? `Disconnect sent to ${agent.hostname} — agent service/task will stop on that PC.`
+          : `Disconnect failed: ${ack?.error || "unknown"}`
+      );
+    });
+  }
+
   function renderAgents(agents) {
     const tb = $("agents-body");
     tb.innerHTML = "";
+    let matchedPending = null;
     agents.forEach((a) => {
+      const lab = (a.label && String(a.label).trim()) || "";
+      if (pendingConnectLabel && lab === pendingConnectLabel) matchedPending = a;
+    });
+    agents.forEach((a) => {
+      const labelText =
+        (a.label && String(a.label).trim()) ? a.label.trim() : "—";
       const tr = document.createElement("tr");
       tr.innerHTML = `
+        <td><div class="cell-stack"><span>${escapeHtml(labelText)}</span><button type="button" class="btn-ghost btn-edit-label">Set label</button></div></td>
         <td>${escapeHtml(a.hostname)}</td>
         <td>${escapeHtml(a.platform)} ${escapeHtml(a.arch || "")}</td>
         <td>${a.online ? '<span class="pill ok">Online</span>' : '<span class="pill off">Offline</span>'}</td>
-        <td>
+        <td><div class="cell-actions">
           <button type="button" class="btn-ghost btn-open">Open</button>
+          <button type="button" class="btn-ghost btn-connect-pc">Connect</button>
+          <button type="button" class="btn-ghost btn-disconnect-pc">Disconnect</button>
           <button type="button" class="btn-ghost btn-remove">Remove</button>
-        </td>`;
+        </div></td>`;
       tr.querySelector(".btn-open").onclick = () => openDetail(a);
+      tr.querySelector(".btn-edit-label").onclick = () => editAgentLabel(a);
+      tr.querySelector(".btn-connect-pc").onclick = () => rowAgentConnect(a);
+      tr.querySelector(".btn-disconnect-pc").onclick = () => rowAgentDisconnect(a);
       tr.querySelector(".btn-remove").onclick = () => removeComputer(a);
       tb.appendChild(tr);
     });
+    if (matchedPending) {
+      $("add-computer-panel").classList.toggle("hidden", true);
+      $("key-output").textContent = `Computer connected: ${matchedPending.label} (${matchedPending.hostname})`;
+      pendingConnectLabel = "";
+      if (pendingConnectTimer) {
+        clearInterval(pendingConnectTimer);
+        pendingConnectTimer = null;
+      }
+    }
   }
 
   async function removeComputer(agent) {
@@ -357,29 +497,10 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
   }
 
   function openDetail(agent) {
-    selectedAgentId = agent.id;
-    $("detail-panel").classList.toggle("hidden", false);
-    $("detail-title").textContent = `${agent.hostname} (${agent.platform})`;
-    monitorHistory.cpu = [];
-    monitorHistory.mem = [];
-    monitorHistory.disk = [];
-    $("metric-cpu").textContent = "-";
-    $("metric-mem").textContent = "-";
-    $("metric-disk").textContent = "-";
-    $("metric-uptime").textContent = "-";
-    $("metric-hostname").textContent = "";
-    $("metrics-out").textContent = "";
-    $("services-out").textContent = "";
-    $("exec-out").textContent = "";
-    $("shell-out").value = "";
-    activateTab("monitor");
-    if (agent.online) {
-      requestMonitorSample();
-      startMonitorTimer();
-    } else {
-      $("metrics-out").textContent = "Agent offline.";
-      $("monitor-live-status").textContent = "Agent offline";
-    }
+    const url = new URL("computer.html", window.location.href);
+    url.searchParams.set("agentId", agent.id);
+    if (token) url.searchParams.set("token", token);
+    window.location.href = url.toString();
   }
 
   $("btn-close-detail").onclick = () => {
@@ -412,11 +533,19 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
     $("key-output").textContent = "";
     try {
       const label = $("key-label").value.trim();
+      if (!label) {
+        $("key-output").textContent = "Label is required.";
+        return;
+      }
       const res = await api("/api/keys", {
         method: "POST",
         body: JSON.stringify({ multiUse: false, label }),
       });
-      $("key-output").textContent = `Pairing key: ${res.key}\n(One-time key)`;
+      $("key-output").textContent = `Pairing key: ${res.key}\nLabel: ${res.label || ""}\n(One-time key)`;
+      pendingConnectLabel = label;
+      $("key-output").textContent += "\nComputer is connecting...";
+      if (pendingConnectTimer) clearInterval(pendingConnectTimer);
+      pendingConnectTimer = setInterval(() => refreshAgents(), 2500);
       refreshInstallSnippet();
     } catch (e) {
       $("key-output").textContent =
@@ -429,14 +558,22 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
     $("key-output").textContent = "";
     try {
       const label = $("key-label").value.trim();
+      if (!label) {
+        $("key-output").textContent = "Label is required.";
+        return;
+      }
       const res = await api("/api/keys", {
         method: "POST",
         body: JSON.stringify({ multiUse: false, label }),
       });
-      $("key-output").textContent = `Pairing key: ${res.key}\n(One-time key)`;
+      $("key-output").textContent = `Pairing key: ${res.key}\nLabel: ${res.label || ""}\n(One-time key)`;
+      pendingConnectLabel = label;
+      $("key-output").textContent += "\nComputer is connecting...";
+      if (pendingConnectTimer) clearInterval(pendingConnectTimer);
+      pendingConnectTimer = setInterval(() => refreshAgents(), 2500);
       refreshInstallSnippet();
       await navigator.clipboard.writeText($("install-snippet").textContent.trim());
-      $("key-output").textContent += "\nInstall command copied.";
+      $("key-output").textContent += "\nInstall command copied. Waiting for computer to connect...";
     } catch (e) {
       $("key-output").textContent =
         String(e.message || e) +
@@ -475,6 +612,14 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
     } catch {
       $("key-output").textContent = "Copy failed. Select and copy manually.";
     }
+  };
+
+  $("btn-open-add-computer").onclick = () => {
+    $("add-computer-panel").classList.toggle("hidden", false);
+  };
+
+  $("btn-close-add-computer").onclick = () => {
+    $("add-computer-panel").classList.toggle("hidden", true);
   };
 
   $("install-mode").onchange = () => refreshInstallSnippet();

@@ -179,6 +179,22 @@ button:hover {
   }
 }
 
+.grid-2.single-col {
+  grid-template-columns: 1fr;
+}
+
+.add-computer-popup {
+  position: fixed;
+  z-index: 50;
+  inset: 4% 6%;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem 1.25rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
 .agents {
   width: 100%;
   border-collapse: collapse;
@@ -195,6 +211,20 @@ button:hover {
 
 .agents tbody tr:hover {
   background: rgba(61, 139, 253, 0.06);
+}
+
+.agents .cell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.agents td .cell-stack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .pill {
@@ -311,4 +341,28 @@ button:hover {
 
 .monitor-live {
   margin-left: auto;
+}
+
+.computer-layout {
+  padding-bottom: 6.5rem;
+}
+
+.back-link {
+  text-decoration: none;
+}
+
+.bottom-tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  background: rgba(10, 15, 22, 0.95);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+  z-index: 40;
 }

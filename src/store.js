@@ -32,12 +32,14 @@ function writeStore(store) {
 }
 
 function createPairingKey(label) {
+  const labelText = String(label || "").trim();
+  if (!labelText) throw new Error("Label is required");
   const store = readStore();
   const key = uuidv4().replace(/-/g, "").slice(0, 24);
   const record = {
     id: uuidv4(),
     key,
-    label: label || "",
+    label: labelText,
     multiUse: false,
     createdAt: new Date().toISOString(),
     used: false,
@@ -48,9 +50,18 @@ function createPairingKey(label) {
   return record;
 }
 
+function normalizePairingKeyInput(key) {
+  let s = String(key || "").trim().replace(/^["'`]+|["'`]+$/g, "");
+  s = s.replace(/-/g, "");
+  return s.toLowerCase();
+}
+
 function consumePairingKey(key) {
+  const needle = normalizePairingKeyInput(key);
   const store = readStore();
-  const idx = store.pairingKeys.findIndex((k) => k.key === key);
+  const idx = store.pairingKeys.findIndex(
+    (k) => normalizePairingKeyInput(k.key) === needle
+  );
   if (idx === -1) return { ok: false, reason: "not_found" };
   const rec = store.pairingKeys[idx];
   if (rec.revokedAt) return { ok: false, reason: "revoked" };
@@ -63,16 +74,20 @@ function consumePairingKey(key) {
   return { ok: true, record: rec };
 }
 
-function upsertAgentFromRegister({ id, secret, hostname, os, platform, arch, version }) {
+function upsertAgentFromRegister({ id, secret, hostname, os, platform, arch, version, label }) {
   const store = readStore();
   const existing = store.agents.find((a) => a.id === id);
   const now = new Date().toISOString();
+  const applyLabel =
+    typeof label === "string" &&
+    label.trim().length > 0;
   if (existing) {
     existing.hostname = hostname;
     existing.os = os;
     existing.platform = platform;
     existing.arch = arch;
     existing.version = version;
+    if (applyLabel) existing.label = label.trim();
     existing.lastSeen = now;
     if (secret && !existing.secret) existing.secret = secret;
     writeStore(store);
@@ -86,6 +101,7 @@ function upsertAgentFromRegister({ id, secret, hostname, os, platform, arch, ver
     platform,
     arch,
     version,
+    label: applyLabel ? label.trim() : "",
     registeredAt: now,
     lastSeen: now,
   };
@@ -126,6 +142,17 @@ function removeAgent(agentId) {
   return true;
 }
 
+function setAgentLabel(agentId, label) {
+  const text = String(label || "").trim();
+  if (!text) return false;
+  const store = readStore();
+  const a = store.agents.find((x) => x.id === agentId);
+  if (!a) return false;
+  a.label = text;
+  writeStore(store);
+  return true;
+}
+
 module.exports = {
   readStore,
   createPairingKey,
@@ -136,4 +163,5 @@ module.exports = {
   listAgents,
   listKeys,
   removeAgent,
+  setAgentLabel,
 };

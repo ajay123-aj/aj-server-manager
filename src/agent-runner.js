@@ -527,6 +527,9 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
     auth,
   });
   socket.serverUrlUsed = normalized;
+  if (reconnectId && reconnectSecret && !pair) {
+    socket.agentIdStored = reconnectId;
+  }
 
   let telemetryTimer = null;
   async function startTelemetryLoop() {

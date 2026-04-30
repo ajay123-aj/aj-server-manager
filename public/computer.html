@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Computer | AJ Server Manager</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="layout computer-layout">
+      <section class="card computer-top">
+        <div class="detail-head">
+          <div>
+            <p class="hint hint-compact" id="detail-label" aria-live="polite"></p>
+            <h2 id="detail-title">Computer</h2>
+          </div>
+          <button type="button" class="btn-ghost back-link" id="btn-back-list">Back</button>
+        </div>
+        <p class="hint hint-compact" id="monitor-live-status">Connecting...</p>
+        <div class="monitor-grid">
+          <div class="metric-card">
+            <h4>CPU</h4>
+            <p class="metric-value" id="metric-cpu">-</p>
+            <canvas id="chart-cpu" width="260" height="64"></canvas>
+          </div>
+          <div class="metric-card">
+            <h4>Memory</h4>
+            <p class="metric-value" id="metric-mem">-</p>
+            <canvas id="chart-mem" width="260" height="64"></canvas>
+          </div>
+          <div class="metric-card">
+            <h4>Disk</h4>
+            <p class="metric-value" id="metric-disk">-</p>
+            <canvas id="chart-disk" width="260" height="64"></canvas>
+          </div>
+          <div class="metric-card">
+            <h4>Uptime</h4>
+            <p class="metric-value" id="metric-uptime">-</p>
+            <p class="hint hint-compact" id="metric-hostname"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card tab-panel" data-panel="services">
+        <div class="row">
+          <button type="button" id="btn-refresh-services">Load services</button>
+          <button type="button" id="btn-agent-connect" class="btn-ghost">Connect</button>
+          <button type="button" id="btn-agent-disconnect" class="btn-ghost">Disconnect</button>
+        </div>
+        <pre class="mono" id="services-out"></pre>
+      </section>
+
+      <section class="card tab-panel hidden" data-panel="exec">
+        <textarea id="exec-cmd" rows="3" placeholder="e.g. dir  or  sudo apt-get update"></textarea>
+        <div class="row">
+          <button type="button" id="btn-run-exec">Execute</button>
+        </div>
+        <pre class="mono" id="exec-out"></pre>
+      </section>
+
+      <section class="card tab-panel hidden" data-panel="shell">
+        <p class="hint">
+          Opens <code>PowerShell</code> on Windows or <code>bash</code> on Linux.
+        </p>
+        <div class="row">
+          <button type="button" id="btn-shell-start">Start shell</button>
+          <button type="button" id="btn-shell-stop">Stop shell</button>
+        </div>
+        <textarea id="shell-out" rows="12" readonly></textarea>
+        <div class="row">
+          <input type="text" id="shell-in" placeholder="Command line" autocomplete="off" />
+          <button type="button" id="btn-shell-send">Send</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="bottom-tabs">
+      <button type="button" class="tab active" data-tab="services">Services</button>
+      <button type="button" class="tab" data-tab="exec">CMD</button>
+      <button type="button" class="tab" data-tab="shell">Shell</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="computer.js"></script>
+  </body>
+</html>
