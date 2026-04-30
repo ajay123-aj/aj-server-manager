@@ -301,8 +301,12 @@
   function buildConnectivitySnippet() {
     const server = bestAgentServerUrl();
     return [
-      `# Linux/macOS connectivity test (run on agent PC)`,
-      `curl -v "${server}/api/health"`,
+      `# Linux/macOS (run on agent PC)`,
+      `curl -fsS "${server}/api/health"`,
+      ``,
+      `# Windows — use curl.exe or irm (plain "curl" in PowerShell runs Invoke-WebRequest and may prompt)`,
+      `curl.exe -fsS "${server}/api/health"`,
+      `irm "${server}/api/health"`,
       ``,
       `# Windows firewall open (run on dashboard PC PowerShell as Admin)`,
       `netsh advfirewall firewall add rule name="AJ Dashboard 3847" dir=in action=allow protocol=TCP localport=3847`,
