@@ -238,8 +238,8 @@
     const server = bestAgentServerUrl();
     const mode = $("install-mode")?.value || "node";
     const shell = $("install-shell")?.value || "bash";
-    const asService = !!$("install-as-service")?.checked;
-    const autoClose = !!$("auto-close-terminal")?.checked;
+    const asService = true;
+    const autoClose = true;
     const repo = "https://github.com/ajay123-aj/aj-server-manager.git";
 
     if (shell === "powershell") {
@@ -481,8 +481,6 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
 
   $("install-mode").onchange = () => refreshInstallSnippet();
   $("install-shell").onchange = () => refreshInstallSnippet();
-  $("install-as-service").onchange = () => refreshInstallSnippet();
-  $("auto-close-terminal").onchange = () => refreshInstallSnippet();
 
   $("agent-server-url").addEventListener("input", () => {
     const v = $("agent-server-url").value.trim();
@@ -717,16 +715,6 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
     sendCommand(selectedAgentId, "list_services", {});
   };
 
-  function runServiceControl(type) {
-    if (!selectedAgentId || !socket) return;
-    $("services-out").textContent = `Running ${type}…`;
-    sendCommand(selectedAgentId, type, { serverUrl: bestAgentServerUrl() });
-  }
-
-  $("btn-install-agent-service").onclick = () => runServiceControl("service_install");
-  $("btn-start-agent-service").onclick = () => runServiceControl("service_start");
-  $("btn-stop-agent-service").onclick = () => runServiceControl("service_stop");
-  $("btn-remove-agent-service").onclick = () => runServiceControl("service_remove");
 
   $("btn-run-exec").onclick = () => {
     const cmd = $("exec-cmd").value;
