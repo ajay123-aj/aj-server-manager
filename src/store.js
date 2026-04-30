@@ -2,7 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 
-const dataDir = path.join(__dirname, "..", "data");
+const dataDir = process.env.AJ_STORE_DATA_DIR
+  ? path.resolve(process.env.AJ_STORE_DATA_DIR)
+  : path.join(__dirname, "..", "data");
 const storePath = path.join(dataDir, "store.json");
 
 function defaultStore() {
@@ -31,7 +33,7 @@ function writeStore(store) {
   fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
 }
 
-function createPairingKey(label) {
+function createPairingKey(label, multiUse = true) {
   const labelText = String(label || "").trim();
   if (!labelText) throw new Error("Label is required");
   const store = readStore();
@@ -40,7 +42,7 @@ function createPairingKey(label) {
     id: uuidv4(),
     key,
     label: labelText,
-    multiUse: false,
+    multiUse: Boolean(multiUse),
     createdAt: new Date().toISOString(),
     used: false,
     useCount: 0,
@@ -65,11 +67,14 @@ function consumePairingKey(key) {
   if (idx === -1) return { ok: false, reason: "not_found" };
   const rec = store.pairingKeys[idx];
   if (rec.revokedAt) return { ok: false, reason: "revoked" };
-  if (rec.used) return { ok: false, reason: "already_used" };
+  const isMulti = Boolean(rec.multiUse);
+  if (!isMulti && rec.used) return { ok: false, reason: "already_used" };
   rec.useCount = (rec.useCount || 0) + 1;
   rec.lastUsedAt = new Date().toISOString();
-  rec.used = true;
-  rec.usedAt = rec.lastUsedAt;
+  if (!isMulti) {
+    rec.used = true;
+    rec.usedAt = rec.lastUsedAt;
+  }
   writeStore(store);
   return { ok: true, record: rec };
 }

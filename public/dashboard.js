@@ -21,6 +21,10 @@
   const monitorHistory = { cpu: [], mem: [], disk: [] };
   let pendingConnectLabel = "";
   let pendingConnectTimer = null;
+  /** Rows in table last time we rendered (used after Add Computer pairing). */
+  let lastAgentsListCount = 0;
+  /** Snapshot of lastAgentsListCount when a pairing key was generated; -1 = no wait. */
+  let pendingAgentsBaseline = -1;
 
   $("admin-token").value = token;
   if (isWindowsBrowser && $("install-shell")) {
@@ -61,6 +65,28 @@
   function computersHint(msg) {
     const el = $("computers-hint");
     if (el) el.textContent = msg || "";
+  }
+
+  function finishPendingEnrollment(msg) {
+    if (pendingConnectTimer) {
+      clearInterval(pendingConnectTimer);
+      pendingConnectTimer = null;
+    }
+    pendingAgentsBaseline = -1;
+    pendingConnectLabel = "";
+    $("add-computer-panel").classList.add("hidden");
+    if (msg) computersHint(msg);
+    focusComputersSection();
+  }
+
+  function startPendingEnrollmentPoll(labelSnapshot) {
+    pendingConnectLabel = labelSnapshot || "";
+    pendingAgentsBaseline = lastAgentsListCount;
+    if (pendingConnectTimer) clearInterval(pendingConnectTimer);
+    pendingConnectTimer = setInterval(() => refreshAgents(), 2500);
+    computersHint(
+      "Waiting for that PC to run the copied command… The Computers table below updates when it connects."
+    );
   }
 
   function focusComputersSection() {
@@ -291,6 +317,17 @@
     const autoClose = true;
     const repo = "https://github.com/ajay123-aj/aj-server-manager.git";
 
+    function escapePsSq(s) {
+      return String(s).replace(/'/g, "''");
+    }
+
+    /** After cwd is the repo root: npm, one-time pairing, log-on task (no pairing key in the task). */
+    function windowsAgentBootstrapFromRepoDir(srvRaw, pairingKeyRaw) {
+      const srv = escapePsSq(srvRaw);
+      const pairKey = escapePsSq(pairingKeyRaw);
+      return `$mgr=(Get-Location).Path; Set-Location $mgr; if (-not (Test-Path (Join-Path $mgr 'node_modules\\socket.io-client'))) { Write-Host 'Running npm install in repo...' -ForegroundColor Cyan; npm install; if ($LASTEXITCODE -ne 0) { Write-Host 'npm install failed.' -ForegroundColor Red; exit 1 } }; $srv='${srv}'; $pairkey='${pairKey}'; $alog=Join-Path $env:TEMP 'aj-server-manager-agent.out.log'; $elog=Join-Path $env:TEMP 'aj-server-manager-agent.err.log'; $node=(Get-Command node).Source; $script=(Resolve-Path (Join-Path $mgr 'src/agent-cli.js')).Path; Write-Host ('Starting agent (repo: {0}) → dashboard {1} ...' -f $mgr,$srv) -ForegroundColor Cyan; Start-Process -WindowStyle Hidden -FilePath $node -WorkingDirectory $mgr -ArgumentList @($script,'--server',$srv,'--key',$pairkey) -RedirectStandardOutput $alog -RedirectStandardError $elog; Write-Host ('Agent logs if needed: {0}, {1}' -f $alog,$elog) -ForegroundColor Gray; try { $argLine=('"{0}" --server "{1}"' -f $script,$srv); $stAction=New-ScheduledTaskAction -Execute $node -WorkingDirectory $mgr -Argument $argLine; $stTrigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME; $stPrincipal=New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited; Register-ScheduledTask -TaskName "aj-server-manager" -Action $stAction -Trigger $stTrigger -Principal $stPrincipal -Force | Out-Null } catch { Write-Host ('Note: Could not register log-on task ({0}). Agent was started without it; run this script in PowerShell as Administrator for auto-start at sign-in.' -f $_.Exception.Message) -ForegroundColor DarkYellow }; Write-Host 'If Offline after ~20s: check logs above, Task Manager→node.exe, and curl/dashboard /api/health from this LAN.' -ForegroundColor Gray`;
+    }
+
     if (shell === "powershell") {
       const psClone =
         `Set-Location $env:USERPROFILE; if (Test-Path .\\aj-server-manager\\.git) { git -C .\\aj-server-manager pull } else { git clone "${repo}" aj-server-manager }; Set-Location .\\aj-server-manager;`;
@@ -299,8 +336,8 @@
         return autoClose ? `${cmd}; exit` : cmd;
       }
       if (asService) {
-        const cmd = `${psClone} $node=(Get-Command node).Path; $script=(Resolve-Path .\\src\\agent-cli.js).Path; $args="\`"$script\`" --server \`"${server}\`" --key \`"${key}\`""; schtasks /Create /TN "AJAgentUserTask" /SC ONLOGON /TR "\`"$node\`" $args" /F /RL LIMITED | Out-Null; Start-Process -WindowStyle Hidden -FilePath $node -ArgumentList $args`;
-        return autoClose ? `${cmd}; exit` : cmd;
+        const cmd = `${psClone} ${windowsAgentBootstrapFromRepoDir(server, key)}`;
+        return autoClose ? `${cmd}; Start-Sleep -Seconds 2; exit` : cmd;
       }
       const cmd = `${psClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
       return autoClose ? `${cmd}; exit` : cmd;
@@ -314,7 +351,11 @@
         return autoClose ? `${cmd} && exit` : cmd;
       }
       if (asService) {
-        const cmd = `${winClone} powershell -NoProfile -Command "$n='AJAgentService'; $bin='\"' + (Get-Command node).Path + '\" \"' + (Resolve-Path .\\src\\agent-cli.js) + '\" --server ${server} --key ${key}'; if (-not (Get-Service -Name $n -ErrorAction SilentlyContinue)) { New-Service -Name $n -BinaryPathName $bin -DisplayName 'AJ Agent Service' -StartupType Automatic }; Start-Service -Name $n; Get-Service -Name $n | Select Name,Status,StartType"`;
+        const quoted =
+          "'" +
+          `${windowsAgentBootstrapFromRepoDir(server, key)}`.replace(/'/g, "''") +
+          "'";
+        const cmd = `${winClone} powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${quoted}`;
         return autoClose ? `${cmd} && exit` : cmd;
       }
       const cmd = `${winClone} node .\\src\\agent-cli.js --server "${server}" --key "${key}"`;
@@ -327,15 +368,15 @@
       return `${posixClone} docker run --rm -it -v "$(pwd):/app" -w /app node:20 sh -lc "node ./src/agent-cli.js --server '${server}' --key '${key}'"`;
     }
     if (asService) {
-      return `${posixClone} (command -v node >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y nodejs npm)); sudo bash -lc 'cat >/etc/systemd/system/aj-agent.service <<EOF
+      return `${posixClone} (command -v node >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y nodejs npm)); npm install; node ./src/agent-cli.js --server "${server}" --key "${key}" >/tmp/aj-server-manager-pair.log 2>&1 & i=0; while [ \$i -lt 120 ] && ! [ -f \$HOME/.aj-server-manager-agent.json ]; do sleep 1; i=\$((i+1)); done; sudo bash -lc 'cat >/etc/systemd/system/aj-server-manager.service <<EOF
 [Unit]
-Description=AJ Agent Service
+Description=AJ Server Manager Agent
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$(command -v node) $(pwd)/src/agent-cli.js --server "${server}" --key "${key}"
+ExecStart=$(command -v node) $(pwd)/src/agent-cli.js --server "${server}"
 Restart=always
 RestartSec=3
 User=root
@@ -343,7 +384,7 @@ User=root
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl status aj-agent.service --no-pager --lines=5'`;
+systemctl daemon-reload && systemctl enable --now aj-server-manager.service && systemctl status aj-server-manager.service --no-pager --lines=5'`;
     }
     return `${posixClone} (command -v node >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y nodejs npm)); node ./src/agent-cli.js --server "${server}" --key "${key}"`;
   }
@@ -381,7 +422,7 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
     }
     if (!agent.online) {
       computersHint(
-        "This PC shows Offline — the dashboard cannot reach that computer until the agent process is running there. On Linux start: sudo systemctl start aj-agent.service (or rerun the install one-liner). Use Connect again after it is online."
+        "This PC shows Offline — the dashboard cannot reach that computer until the agent process is running there. On Linux start: sudo systemctl start aj-server-manager.service (or rerun the install one-liner). Use Connect again after it is online."
       );
       return;
     }
@@ -418,14 +459,15 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
   }
 
   function renderAgents(agents) {
+    const list = Array.isArray(agents) ? agents : [];
     const tb = $("agents-body");
     tb.innerHTML = "";
     let matchedPending = null;
-    agents.forEach((a) => {
+    list.forEach((a) => {
       const lab = (a.label && String(a.label).trim()) || "";
       if (pendingConnectLabel && lab === pendingConnectLabel) matchedPending = a;
     });
-    agents.forEach((a) => {
+    list.forEach((a) => {
       const labelText =
         (a.label && String(a.label).trim()) ? a.label.trim() : "—";
       const tr = document.createElement("tr");
@@ -448,13 +490,19 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
       tb.appendChild(tr);
     });
     if (matchedPending) {
-      $("add-computer-panel").classList.toggle("hidden", true);
-      $("key-output").textContent = `Computer connected: ${matchedPending.label} (${matchedPending.hostname})`;
-      pendingConnectLabel = "";
-      if (pendingConnectTimer) {
-        clearInterval(pendingConnectTimer);
-        pendingConnectTimer = null;
-      }
+      $("key-output").textContent =
+        `Computer connected.\nPairing label: ${matchedPending.label}\nHostname: ${matchedPending.hostname}`;
+    }
+
+    lastAgentsListCount = list.length;
+    if (
+      pendingConnectTimer != null &&
+      pendingAgentsBaseline >= 0 &&
+      list.length > pendingAgentsBaseline
+    ) {
+      finishPendingEnrollment(
+        `New computer in list (${list.length} total). It appears below — scroll down if needed.`
+      );
     }
   }
 
@@ -493,6 +541,7 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
       renderAgents(data.agents);
     } catch (e) {
       console.error(e);
+      computersHint(`Could not load computers list: ${e.message || e}`);
     }
   }
 
@@ -537,15 +586,18 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
         $("key-output").textContent = "Label is required.";
         return;
       }
+      const mu = $("key-multi-use")?.checked ?? true;
       const res = await api("/api/keys", {
         method: "POST",
-        body: JSON.stringify({ multiUse: false, label }),
+        body: JSON.stringify({ label, multiUse: mu }),
       });
-      $("key-output").textContent = `Pairing key: ${res.key}\nLabel: ${res.label || ""}\n(One-time key)`;
-      pendingConnectLabel = label;
-      $("key-output").textContent += "\nComputer is connecting...";
-      if (pendingConnectTimer) clearInterval(pendingConnectTimer);
-      pendingConnectTimer = setInterval(() => refreshAgents(), 2500);
+      const mt = res.multiUse
+        ? "(Multi-use: reuse this key until you revoke/regenerate)"
+        : "(Single-use: key works for exactly one enrollment)";
+      $("key-output").textContent = `Pairing key: ${res.key}\nLabel: ${res.label || ""}\n${mt}`;
+      $("key-output").textContent +=
+        "\n\nRun the command on the other PC. Waiting for connection… Close this popup any time.";
+      startPendingEnrollmentPoll(label);
       refreshInstallSnippet();
     } catch (e) {
       $("key-output").textContent =
@@ -562,18 +614,21 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
         $("key-output").textContent = "Label is required.";
         return;
       }
+      const mu = $("key-multi-use")?.checked ?? true;
       const res = await api("/api/keys", {
         method: "POST",
-        body: JSON.stringify({ multiUse: false, label }),
+        body: JSON.stringify({ label, multiUse: mu }),
       });
-      $("key-output").textContent = `Pairing key: ${res.key}\nLabel: ${res.label || ""}\n(One-time key)`;
-      pendingConnectLabel = label;
-      $("key-output").textContent += "\nComputer is connecting...";
-      if (pendingConnectTimer) clearInterval(pendingConnectTimer);
-      pendingConnectTimer = setInterval(() => refreshAgents(), 2500);
+      const mt = res.multiUse
+        ? "(Multi-use: reuse this key until you revoke/regenerate)"
+        : "(Single-use: key works for exactly one enrollment)";
+      $("key-output").textContent = `Pairing key: ${res.key}\nLabel: ${res.label || ""}\n${mt}`;
+      $("key-output").textContent +=
+        "\n\nRun the command on the other PC. Waiting for connection… Close this popup any time.";
+      startPendingEnrollmentPoll(label);
       refreshInstallSnippet();
       await navigator.clipboard.writeText($("install-snippet").textContent.trim());
-      $("key-output").textContent += "\nInstall command copied. Waiting for computer to connect...";
+      $("key-output").textContent += "\nInstall command copied.";
     } catch (e) {
       $("key-output").textContent =
         String(e.message || e) +
@@ -619,7 +674,12 @@ systemctl daemon-reload && systemctl enable --now aj-agent.service && systemctl 
   };
 
   $("btn-close-add-computer").onclick = () => {
-    $("add-computer-panel").classList.toggle("hidden", true);
+    $("add-computer-panel").classList.add("hidden");
+    if (pendingConnectTimer) {
+      computersHint(
+        "Waiting for new PC… The Computers list below refreshes automatically when it connects."
+      );
+    }
   };
 
   $("install-mode").onchange = () => refreshInstallSnippet();

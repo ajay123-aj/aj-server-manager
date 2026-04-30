@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node src/server.js",
     "agent": "node src/agent-cli.js",
-    "dev": "node src/server.js"
+    "dev": "node src/server.js",
+    "test": "node --test ./test/store.test.js"
   },
   "engines": {
     "node": ">=18"

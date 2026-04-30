@@ -1,5 +1,11 @@
 const os = require("os");
 const fs = require("fs");
+const {
+  WIN_SERVICE_NAME,
+  WIN_TASK_NAME,
+  WIN_SERVICE_DISPLAY_NAME,
+  LINUX_SYSTEMD_UNIT,
+} = require("./service-names");
 const path = require("path");
 const http = require("http");
 const https = require("https");
@@ -184,8 +190,8 @@ function runExec(command, cwd) {
 }
 
 async function handleServiceControl(type, payload, socket) {
-  const serviceName = payload?.serviceName || "AJAgentService";
-  const taskName = payload?.taskName || "AJAgentUserTask";
+  const serviceName = payload?.serviceName || WIN_SERVICE_NAME;
+  const taskName = payload?.taskName || WIN_TASK_NAME;
   const serverUrl = payload?.serverUrl || socket.serverUrlUsed;
   const scriptPath = path.join(__dirname, "agent-cli.js");
   const nodePath = process.execPath;
@@ -202,7 +208,7 @@ async function handleServiceControl(type, payload, socket) {
       const ps = [
         `$name='${esc(serviceName)}'`,
         `$bin='${esc(binPath)}'`,
-        `if (-not (Get-Service -Name $name -ErrorAction SilentlyContinue)) { New-Service -Name $name -BinaryPathName $bin -DisplayName "AJ Agent Service" -StartupType Automatic }`,
+        `if (-not (Get-Service -Name $name -ErrorAction SilentlyContinue)) { New-Service -Name $name -BinaryPathName $bin -DisplayName '${esc(WIN_SERVICE_DISPLAY_NAME)}' -StartupType Automatic }`,
         `Start-Service -Name $name -ErrorAction SilentlyContinue`,
         `Get-Service -Name $name | Select-Object Name,Status,StartType | ConvertTo-Json -Compress`,
       ].join("; ");
@@ -250,9 +256,9 @@ async function handleServiceControl(type, payload, socket) {
       return { stdout: r.stdout, stderr: r.stderr, exitCode: r.code };
     }
   } else {
-    const unit = "aj-agent.service";
+    const unit = LINUX_SYSTEMD_UNIT;
     const unitContent = `[Unit]
-Description=AJ Agent Service
+Description=AJ Server Manager Agent
 After=network-online.target
 Wants=network-online.target
 
@@ -479,8 +485,15 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
     pair = process.env.AJ_PAIRING_KEY;
   }
 
+  const pairingRequested = !!(pair && String(pair).trim());
+
   const existing = loadConfig(cfgPath);
-  if (existing?.serverUrl && existing?.agentId && existing?.secret) {
+  if (
+    existing?.serverUrl &&
+    existing?.agentId &&
+    existing?.secret &&
+    !pairingRequested
+  ) {
     try {
       const u = new URL(serverUrl);
       const su = new URL(existing.serverUrl);
@@ -576,7 +589,16 @@ async function runAgent({ serverUrl, pairingKey, reconnect, configFile }) {
   });
 
   socket.on("agent:error", (e) => {
-    console.error("[agent] error:", e?.error || e);
+    const msg = e?.error || e;
+    console.error("[agent] error:", msg);
+    if (
+      String(msg).includes("Invalid reconnect credentials") ||
+      String(msg).includes("Pairing key already used")
+    ) {
+      console.error(
+        `[agent] If you reinstalled the dashboard or removed this PC, delete ${cfgPath} and enroll again with a fresh pairing key.`
+      );
+    }
   });
 
   socket.on("agent:command", (msg) => {

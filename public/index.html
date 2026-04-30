@@ -41,8 +41,14 @@
             </div>
             <h2>Pairing keys</h2>
             <p class="hint">
-              Pairing key is one-time use only (unique). Reusing same key on another PC shows "already used".
+              The install command performs one-time pairing (with key). After success, reuse of the pairing key depends on multi-use vs single-use below. A machine appears below only once the agent has connected over the LAN to this dashboard URL.
             </p>
+            <div class="row">
+              <label class="row-inline hint">
+                <input type="checkbox" id="key-multi-use" checked />
+                Multi-use pairing key (same key for many PCs; recommended)
+              </label>
+            </div>
             <div class="row">
               <input type="text" id="key-label" placeholder="Label (required, e.g. Office-PC-1)" />
               <button type="button" id="btn-gen-key">Generate key</button>
@@ -86,7 +92,7 @@
               This line refreshes when you change shell, Docker vs Node, or “Agent connects to”.
               Replace <code>YOUR_PAIRING_KEY</code> after you click Generate key.
               On Windows, select <code>Windows PowerShell</code> for <code>PS&gt;</code>.
-              Generated command installs background service and closes terminal automatically.
+              The first bootstraps pairing with the key (once); ongoing log-on task/service uses saved credentials — do not bake the pairing key into auto-start targets.
             </p>
             <pre class="snippet" id="install-snippet"></pre>
             <h4 class="snippet-title">Connectivity check commands</h4>

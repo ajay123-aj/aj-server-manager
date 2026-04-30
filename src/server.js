@@ -126,12 +126,13 @@ app.post(
     if (!label) {
       return res.status(400).json({ error: "Label is required" });
     }
-    const row = store.createPairingKey(label);
+    const multiUse = req.body?.multiUse !== false;
+    const row = store.createPairingKey(label, multiUse);
     res.json({
       key: row.key,
       id: row.id,
       label: row.label,
-      multiUse: false,
+      multiUse: Boolean(row.multiUse),
       createdAt: row.createdAt,
     });
   }
